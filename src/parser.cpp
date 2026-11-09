@@ -5,27 +5,24 @@
 
 using namespace std;
 
-// a) Struct sugerido en el documento para almacenar cada secuencia con su ID
+// a) Struct sugerido en el documento para cada secuencia
 struct DNASequence {
-    string id;       // Ej: MAC.US.x.239.M33262
-    string sequence; // Ej: ATGGGATGTCTTGGGAA...
+    string id;       // MAC.US.x.239.M33262
+    string sequence; // ACTG...
 };
 
-// Verifica si un caracter es uno de los 4 nucleotidos principales (A, T, C, G)
-bool esNucleotidoValido(char c) {
-    return (c == 'A' || c == 'T' || c == 'C' || c == 'G');
-}
-
-// Verifica si un k-mer completo solo contiene A, T, C, G
+// Verifica que el k-mer solo tenga nucleotidos validos (A, T, C, G)
 bool esKmerValido(const string& kmer) {
-    if (kmer.empty()) return false;
     for (int i = 0; i < (int)kmer.length(); i++) {
-        if (!esNucleotidoValido(kmer[i])) return false;
+        char c = kmer[i];
+        if (c != 'A' && c != 'T' && c != 'C' && c != 'G') {
+            return false;
+        }
     }
     return true;
 }
 
-// Parser para leer el archivo FASTA de HIV
+// Parser para leer las secuencias del archivo FASTA
 struct FastaParser {
     DNASequence* lista;
     int cantidad;
@@ -41,7 +38,7 @@ struct FastaParser {
         delete[] lista;
     }
 
-    void redimensionarLista() {
+    void agrandarLista() {
         int nuevaCap = capacidad * 2;
         DNASequence* nuevaLista = new DNASequence[nuevaCap];
         for (int i = 0; i < cantidad; i++) {
@@ -52,58 +49,38 @@ struct FastaParser {
         capacidad = nuevaCap;
     }
 
-    void limpiar() {
-        cantidad = 0;
-    }
-
     bool cargarArchivo(const string& rutaArchivo) {
         ifstream archivo(rutaArchivo.c_str());
-        if (!archivo.is_open()) {
-            return false;
-        }
+        if (!archivo.is_open()) return false;
 
-        limpiar();
+        cantidad = 0;
         string linea;
         string idActual = "";
         string seqActual = "";
-        bool leyendoSecuencia = false;
 
         while (getline(archivo, linea)) {
-            // Quitar saltos de linea o espacios al final
             while (!linea.empty() && (linea.back() == '\r' || linea.back() == '\n' || linea.back() == ' ')) {
                 linea.pop_back();
             }
             if (linea.empty()) continue;
 
             if (linea[0] == '>') {
-                // Guardar la secuencia anterior antes de empezar la nueva
-                if (leyendoSecuencia && !idActual.empty()) {
-                    if (cantidad >= capacidad) {
-                        redimensionarLista();
-                    }
+                if (!idActual.empty()) {
+                    if (cantidad >= capacidad) agrandarLista();
                     lista[cantidad].id = idActual;
                     lista[cantidad].sequence = seqActual;
                     cantidad++;
                 }
-                idActual = linea.substr(1); // Quitar el caracter '>'
+                idActual = linea.substr(1); // Quitar '>'
                 seqActual = "";
-                leyendoSecuencia = true;
-            } else if (leyendoSecuencia) {
-                for (int i = 0; i < (int)linea.length(); i++) {
-                    char c = linea[i];
-                    if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
-                    if (c != ' ' && c != '\t') {
-                        seqActual += c;
-                    }
-                }
+            } else {
+                seqActual += linea;
             }
         }
 
         // Guardar la ultima secuencia del archivo
-        if (leyendoSecuencia && !idActual.empty()) {
-            if (cantidad >= capacidad) {
-                redimensionarLista();
-            }
+        if (!idActual.empty()) {
+            if (cantidad >= capacidad) agrandarLista();
             lista[cantidad].id = idActual;
             lista[cantidad].sequence = seqActual;
             cantidad++;
