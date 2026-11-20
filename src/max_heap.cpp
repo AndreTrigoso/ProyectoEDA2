@@ -1,111 +1,101 @@
-#pragma once
-#include <iostream>
-#include <string>
-#include "tablas_hash.cpp"
+#include "../include/max_heap.hpp"
 
-using namespace std;
+MaxHeapKmers::MaxHeapKmers() {
+    capacidad = 64;
+    tamano = 0;
+    comparacionesHeap = 0; // [GENERADO POR IA PARA CONTRASTACION]
+    heap = new NodoHeap[capacidad];
+}
 
-// ============================================================================
-// c) MAX-HEAP PARA RETORNAR LOS N PATRONES MAS FRECUENTES
-// ============================================================================
+MaxHeapKmers::~MaxHeapKmers() {
+    delete[] heap;
+}
 
-struct NodoHeap {
-    string kmer;
-    int conteo;
-};
+void MaxHeapKmers::intercambiar(int i, int j) {
+    //funcion auxiliar para intercambio de nodos
+    NodoHeap temp = heap[i];
+    heap[i] = heap[j];
+    heap[j] = temp;
+}
 
-struct MaxHeapKmers {
-    NodoHeap* heap;
-    int tamano;
-    int capacidad;
-
-    MaxHeapKmers() {
-        capacidad = 64;
-        tamano = 0;
-        heap = new NodoHeap[capacidad];
-    }
-
-    ~MaxHeapKmers() {
-        delete[] heap;
-    }
-
-    void intercambiar(int i, int j) {
-        NodoHeap temp = heap[i];
-        heap[i] = heap[j];
-        heap[j] = temp;
-    }
-
-    // Sube el nodo mientras su conteo sea mayor que el de su padre
-    void subir(int idx) {
-        while (idx > 0) {
-            int padre = (idx - 1) / 2;
-            if (heap[idx].conteo > heap[padre].conteo) {
-                intercambiar(idx, padre);
-                idx = padre;
-            } else {
-                break;
-            }
+void MaxHeapKmers::subir(int idx) {
+    //heapofy yp
+    // mientras que el indice del nodo sea mayor a 0
+    while (idx > 0) {
+        //obtenemos el padre
+        int padre = (idx - 1) / 2;
+        comparacionesHeap++; // [GENERADO POR IA PARA CONTRASTACION]
+        if (heap[idx].conteo > heap[padre].conteo) {
+            intercambiar(idx, padre);
+            idx = padre;
+        } else {
+            break;
         }
     }
+}
 
-    // Baja el nodo intercambiandolo con el mayor de sus dos hijos
-    void bajar(int idx) {
-        while (true) {
-            int izq = 2 * idx + 1;
-            int der = 2 * idx + 2;
-            int mayor = idx;
+void MaxHeapKmers::bajar(int idx) {
+    // heapify down
+    while (true) {
+        int izq = 2 * idx + 1;
+        int der = 2 * idx + 2;
+        int mayor = idx;
 
-            if (izq < tamano && heap[izq].conteo > heap[mayor].conteo) {
+        if (izq < tamano) {
+            comparacionesHeap++; // [GENERADO POR IA PARA CONTRASTACION]
+            if (heap[izq].conteo > heap[mayor].conteo) {
                 mayor = izq;
             }
-            if (der < tamano && heap[der].conteo > heap[mayor].conteo) {
+        }
+        if (der < tamano) {
+            comparacionesHeap++; // [GENERADO POR IA PARA CONTRASTACION]
+            if (heap[der].conteo > heap[mayor].conteo) {
                 mayor = der;
             }
+        }
 
-            if (mayor != idx) {
-                intercambiar(idx, mayor);
-                idx = mayor;
-            } else {
-                break;
-            }
+        if (mayor != idx) {
+            intercambiar(idx, mayor);
+            idx = mayor;
+        } else {
+            break;
         }
     }
+}
 
-    void insertar(const string& kmer, int conteo) {
-        if (tamano >= capacidad) {
-            int nuevaCap = capacidad * 2;
-            NodoHeap* nuevo = new NodoHeap[nuevaCap];
-            for (int i = 0; i < tamano; i++) {
-                nuevo[i] = heap[i];
-            }
-            delete[] heap;
-            heap = nuevo;
-            capacidad = nuevaCap;
+void MaxHeapKmers::insertar(const string& kmer, int conteo) {
+    if (tamano >= capacidad) {
+        int nuevaCap = capacidad * 2;
+        NodoHeap* nuevo = new NodoHeap[nuevaCap];
+        for (int i = 0; i < tamano; i++) {
+            nuevo[i] = heap[i];
         }
-        heap[tamano].kmer = kmer;
-        heap[tamano].conteo = conteo;
-        subir(tamano);
-        tamano++;
+        delete[] heap;
+        heap = nuevo;
+        capacidad = nuevaCap;
     }
+    heap[tamano].kmer = kmer;
+    heap[tamano].conteo = conteo;
+    subir(tamano);
+    tamano++;
+}
 
-    // Llena el Max-Heap con todos los k-mers guardados en la Tabla Hash 2
-    void construirDesdeTablaHash(const TablaHashDoble& tablaHash2) {
-        tamano = 0;
-        for (int i = 0; i < tablaHash2.capacidad; i++) {
-            if (tablaHash2.tabla[i].ocupado) {
-                insertar(tablaHash2.tabla[i].kmer, tablaHash2.tabla[i].conteo);
-            }
+void MaxHeapKmers::construirDesdeTablaHash(const TablaHashDoble& tablaHash2) {
+    tamano = 0;
+    comparacionesHeap = 0; // [GENERADO POR IA PARA CONTRASTACION]
+    for (int i = 0; i < tablaHash2.capacidad; i++) {
+        if (tablaHash2.tabla[i].ocupado) {
+            insertar(tablaHash2.tabla[i].kmer, tablaHash2.tabla[i].conteo);
         }
     }
+}
 
-    // Extrae y retorna la raiz (el k-mer de mayor frecuencia)
-    NodoHeap extraerMaximo() {
-        NodoHeap maximo = heap[0];
-        heap[0] = heap[tamano - 1];
-        tamano--;
-        if (tamano > 0) {
-            bajar(0);
-        }
-        return maximo;
+NodoHeap MaxHeapKmers::extraerMaximo() {
+    NodoHeap maximo = heap[0];
+    heap[0] = heap[tamano - 1];
+    tamano--;
+    if (tamano > 0) {
+        bajar(0);
     }
-};
+    return maximo;
+}

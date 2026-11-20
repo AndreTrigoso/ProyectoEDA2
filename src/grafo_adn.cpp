@@ -1,101 +1,95 @@
-#pragma once
-#include <iostream>
-#include <string>
+#include "../include/grafo_adn.hpp"
 #include <cmath>
-#include "parser.cpp"
 
-using namespace std;
 
-// ============================================================================
-// d) GRAFO DE SECUENCIAS DE ADN (Algoritmo de Khan et al., 2024)
-// ============================================================================
+// d) GRAFO DIRIGIDO DE 2-MERS Y MATRIZ DE ADYACENCIA (Khan et al. 2024)
+// - Divide S en pares de nucleotidos disjuntos (paso 2)
+// - Calcula d = 1 / (j - i)^beta y llena la matriz de adyacencia A[u][v]
 
-struct ParPosicion {
-    int posicion; // 1, 2, 3...
-    string par;   // 2-mer: "TC", "AT", etc.
-};
 
-struct GrafoADN {
-    ParPosicion* listaPares;
-    int cantidadPares;
+GrafoADN::GrafoADN() {
+    listaPares = nullptr;
+    cantidadPares = 0;
+    numVertices = 0;
+    beta = 1.0;
 
-    string vertices[16];     // Vertices unicos de 2-mers en el grafo G
-    int numVertices;
-    double matriz[16][16];   // Matriz de adyacencia ponderada A[u][v]
-    double beta;
-
-    GrafoADN() {
-        listaPares = nullptr;
-        cantidadPares = 0;
-        numVertices = 0;
-        beta = 1.0;
-    }
-
-    ~GrafoADN() {
-        delete[] listaPares;
-    }
-
-    // Si el vertice 2-mer no existe en G lo agrega; devuelve su indice (0..numVertices-1)
-    int obtenerOAgregarVertice(const string& par) {
-        for (int i = 0; i < numVertices; i++) {
-            if (vertices[i] == par) return i;
+    for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+            matriz[i][j] = 0.0;
         }
-        vertices[numVertices] = par;
-        numVertices++;
-        return numVertices - 1;
     }
+}
 
-    void construirGrafo(const string& secuencia, double valorBeta = 1.0) {
-        delete[] listaPares;
-        cantidadPares = 0;
-        numVertices = 0;
-        beta = valorBeta;
+GrafoADN::~GrafoADN() {
+    delete[] listaPares;
+}
 
-        // Paso 1: Iniciar con el grafo G vacio (matriz en ceros)
-        for (int i = 0; i < 16; i++) {
-            for (int j = 0; j < 16; j++) {
-                matriz[i][j] = 0.0;
-            }
+int GrafoADN::obtenerOAgregarVertice(const string& par) {
+    for (int v = 0; v < numVertices; v++) {
+        if (vertices[v] == par) {
+            return v;
         }
+    }
+    vertices[numVertices] = par;
+    numVertices++;
+    return numVertices - 1;
+}
 
-        int totalPares = (int)secuencia.length() / 2;
-        if (totalPares <= 0) return;
-        listaPares = new ParPosicion[totalPares];
+void GrafoADN::construirGrafo(const string& secuencia, double valorBeta) {
+    delete[] listaPares;
+    listaPares = nullptr;
+    cantidadPares = 0;
+    numVertices = 0;
+    beta = valorBeta;
 
-        // Paso 2 y 3: Dividir S en pares de nucleotidos y registrar sus vertices en G
-        for (int p = 0; p < totalPares; p++) {
-            string par = secuencia.substr(p * 2, 2);
-            if (!esKmerValido(par)) continue;
-
-            listaPares[cantidadPares].posicion = p + 1;
-            listaPares[cantidadPares].par = par;
-            cantidadPares++;
-
-            obtenerOAgregarVertice(par);
-        }
-
-        // Paso 4 y 5: Calcular peso d = 1 / (j - i)^beta y llenar la matriz A[u, v]
-        for (int i = 0; i < cantidadPares; i++) {
-            int u = obtenerOAgregarVertice(listaPares[i].par);
-            int posI = listaPares[i].posicion;
-
-            for (int j = i + 1; j < cantidadPares; j++) {
-                int v = obtenerOAgregarVertice(listaPares[j].par);
-                int posJ = listaPares[j].posicion;
-
-                double peso = 1.0 / pow((double)(posJ - posI), beta);
-                matriz[u][v] += peso;
-            }
+    // Inicializar Matriz de Adyacencia en 0.0 (Semana 8)
+    for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+            matriz[i][j] = 0.0;
         }
     }
 
-    double obtenerPeso(const string& origen, const string& destino) const {
-        int u = -1, v = -1;
-        for (int i = 0; i < numVertices; i++) {
-            if (vertices[i] == origen) u = i;
-            if (vertices[i] == destino) v = i;
-        }
-        if (u == -1 || v == -1) return 0.0;
-        return matriz[u][v];
+    int numPares = (int)secuencia.length() / 2;
+    if (numPares <= 0) return;
+
+    // Arreglo dinamico con los 2-mers en sus posiciones 1..numPares
+    listaPares = new ParPosicion[numPares];
+    for (int i = 0; i < numPares; i++) {
+        string par = secuencia.substr(i * 2, 2);
+        if (!esKmerValido(par)) continue;
+
+        listaPares[cantidadPares].posicion = i + 1;
+        listaPares[cantidadPares].par = par;
+        cantidadPares++;
+
+        obtenerOAgregarVertice(par);
     }
-};
+
+    // Calcular pesos d = 1 / (j - i)^beta para cada pareja i < j
+    for (int i = 0; i < cantidadPares; i++) {
+        int u = obtenerOAgregarVertice(listaPares[i].par);
+        int posI = listaPares[i].posicion;
+
+        for (int j = i + 1; j < cantidadPares; j++) {
+            int v = obtenerOAgregarVertice(listaPares[j].par);
+            int posJ = listaPares[j].posicion;
+
+            double dist = (double)(posJ - posI);
+            double w = 1.0 / pow(dist, beta);
+            matriz[u][v] += w;
+        }
+    }
+}
+
+double GrafoADN::obtenerPeso(const string& origen, const string& destino) const {
+    int u = -1;
+    int v = -1;
+
+    for (int k = 0; k < numVertices; k++) {
+        if (vertices[k] == origen) u = k;
+        if (vertices[k] == destino) v = k;
+    }
+
+    if (u == -1 || v == -1) return 0.0;
+    return matriz[u][v];
+}

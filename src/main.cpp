@@ -3,10 +3,10 @@
 #include <sstream>
 #include <string>
 
-#include "parser.cpp"
-#include "tablas_hash.cpp"
-#include "max_heap.cpp"
-#include "grafo_adn.cpp"
+#include "../include/parser.hpp"
+#include "../include/tablas_hash.hpp"
+#include "../include/max_heap.hpp"
+#include "../include/grafo_adn.hpp"
 
 using namespace std;
 
@@ -56,7 +56,7 @@ int ejecutarModoServidor(const string& rutaFasta) {
             if (cmd == "LOAD_FASTA") {
                 string nuevaRuta;
                 getline(iss >> ws, nuevaRuta);
-                ht1 = TablaHashLineal(10);
+                ht1.reiniciar();
                 if (parser.cargarArchivo(nuevaRuta)) {
                     for (int i = 0; i < parser.cantidad; i++) {
                         ht1.insertar(parser.lista[i]);
@@ -65,11 +65,13 @@ int ejecutarModoServidor(const string& rutaFasta) {
             }
             ostringstream out;
             out << fixed << setprecision(4);
+            // [GENERADO POR IA PARA CONTRASTACION] Usa ht1.colisiones reales
             out << "{\"ok\":true,\"fastaCount\":" << parser.cantidad
                 << ",\"ht1Capacity\":" << ht1.capacidad
                 << ",\"ht1Count\":" << ht1.elementos
                 << ",\"ht1LoadFactor\":" << ht1.obtenerLoadFactor()
-                << ",\"ht1Collisions\":0,\"ht1Rehashes\":[],\"sequences\":[";
+                << ",\"ht1Collisions\":" << ht1.colisiones
+                << ",\"ht1Rehashes\":[],\"sequences\":[";
             for (int i = 0; i < parser.cantidad; i++) {
                 if (i > 0) out << ",";
                 string prev = parser.lista[i].sequence.substr(0, 36) + "...";
@@ -84,11 +86,14 @@ int ejecutarModoServidor(const string& rutaFasta) {
             iss >> id;
             const DNASequence* seq = ht1.buscar(id);
             if (seq) {
+                // [GENERADO POR IA PARA CONTRASTACION] Expone ultimasSondasBusqueda reales
                 cout << "{\"ok\":true,\"found\":true,\"id\":\"" << seq->id
                      << "\",\"length\":" << seq->sequence.length()
-                     << ",\"comparisons\":1,\"sequence\":\"" << seq->sequence << "\"}" << endl;
+                     << ",\"comparisons\":" << ht1.ultimasSondasBusqueda
+                     << ",\"sequence\":\"" << seq->sequence << "\"}" << endl;
             } else {
-                cout << "{\"ok\":true,\"found\":false,\"id\":\"" << id << "\",\"comparisons\":1}" << endl;
+                cout << "{\"ok\":true,\"found\":false,\"id\":\"" << id
+                     << "\",\"comparisons\":" << ht1.ultimasSondasBusqueda << "}" << endl;
             }
         } else if (cmd == "ANALYZE_KMERS") {
             string id;
@@ -105,6 +110,7 @@ int ejecutarModoServidor(const string& rutaFasta) {
 
             ostringstream out;
             out << fixed << setprecision(4);
+            // [GENERADO POR IA PARA CONTRASTACION] Expone ht2.colisiones y metricas reales
             out << "{\"ok\":true,\"seqId\":\"" << seq->id
                 << "\",\"seqLength\":" << seq->sequence.length()
                 << ",\"k\":" << ht2.longitudK
@@ -112,7 +118,7 @@ int ejecutarModoServidor(const string& rutaFasta) {
                 << ",\"ht2Unique\":" << ht2.kmersUnicos
                 << ",\"ht2TotalValid\":" << (int)seq->sequence.length() - k + 1
                 << ",\"ht2LoadFactor\":" << (double)ht2.kmersUnicos / ht2.capacidad
-                << ",\"ht2Collisions\":0,\"topKmers\":[";
+                << ",\"ht2Collisions\":" << ht2.colisiones << ",\"topKmers\":[";
 
             int limite = (topN < maxHeap.tamano) ? topN : maxHeap.tamano;
             for (int i = 0; i < limite; i++) {
@@ -129,7 +135,8 @@ int ejecutarModoServidor(const string& rutaFasta) {
                     out << "{\"slot\":" << i
                         << ",\"occupied\":" << (ht2.tabla[i].ocupado ? "true" : "false")
                         << ",\"kmer\":\"" << ht2.tabla[i].kmer << "\""
-                        << ",\"count\":" << ht2.tabla[i].conteo << ",\"probes\":1}";
+                        << ",\"count\":" << ht2.tabla[i].conteo
+                        << ",\"probes\":" << ht2.tabla[i].sondas << "}";
                     mostrados++;
                 }
             }
@@ -139,9 +146,10 @@ int ejecutarModoServidor(const string& rutaFasta) {
             string kmer;
             iss >> kmer;
             int freq = ht2.buscar(kmer);
+            // [GENERADO POR IA PARA CONTRASTACION] Expone ht2.ultimasSondasBusqueda reales
             cout << "{\"ok\":true,\"kmer\":\"" << kmer
                  << "\",\"found\":" << (freq > 0 ? "true" : "false")
-                 << ",\"count\":" << freq << ",\"comparisons\":1"
+                 << ",\"count\":" << freq << ",\"comparisons\":" << ht2.ultimasSondasBusqueda
                  << ",\"kLength\":" << ht2.longitudK
                  << ",\"capacity\":" << ht2.capacidad << "}" << endl;
         } else if (cmd == "BUILD_GRAPH_ID" || cmd == "BUILD_GRAPH_RAW") {
@@ -218,6 +226,16 @@ int main(int argc, char* argv[]) {
         cout << "Secuencias cargadas: " << parser.cantidad << "\n";
         cout << "Tamano final Tabla Hash 1 (primo m): " << ht1.capacidad
              << " | Load Factor: " << ht1.obtenerLoadFactor() << "\n";
+        // [GENERADO POR IA PARA CONTRASTACION EN LA DISCUSION]
+        // Prompt utilizado: "Imprime las metricas de sondas, colisiones, maximo
+        // de sondas y rehashes de TablaHashLineal y la contrastacion Double
+        // Hashing vs Linear Probing y MaxHeap en consola."
+        cout << fixed << setprecision(4);
+        cout << "[Contrastacion HT1 - Linear Probing] Rehashes: " << ht1.numRehashes
+             << " | Sondas totales: " << ht1.totalSondas
+             << " | Promedio: " << (double)ht1.totalSondas / parser.cantidad
+             << " | Colisiones: " << ht1.colisiones
+             << " | Max sondas: " << ht1.maxSondas << "\n";
     }
 
     int opcion = -1;
@@ -240,8 +258,10 @@ int main(int argc, char* argv[]) {
             if (seq) {
                 cout << "Encontrado! Longitud: " << seq->sequence.length() << "\n";
                 cout << "Prefijo: " << seq->sequence.substr(0, 50) << "...\n";
+                // [GENERADO POR IA PARA CONTRASTACION EN LA DISCUSION]
+                cout << "[Contrastacion] Sondas en busqueda HT1: " << ht1.ultimasSondasBusqueda << "\n";
             } else {
-                cout << "No encontrado.\n";
+                cout << "No encontrado (sondas: " << ht1.ultimasSondasBusqueda << ").\n";
             }
         } else if (opcion == 2) {
             string id;
@@ -269,6 +289,20 @@ int main(int argc, char* argv[]) {
                 NodoHeap top = maxHeap.extraerMaximo();
                 cout << "  #" << (i + 1) << ": " << top.kmer << " -> " << top.conteo << "\n";
             }
+            // [GENERADO POR IA PARA CONTRASTACION EN LA DISCUSION]
+            int ventanasValidas = ht2.totalSondas - ht2.colisiones;
+            cout << fixed << setprecision(4);
+            cout << "\n[Contrastacion HT2 (M = " << ht2.capacidad << ", ventanas = " << ventanasValidas << ")]\n";
+            cout << "  Double Hashing -> Sondas totales: " << ht2.totalSondas
+                 << " | Promedio: " << (ventanasValidas > 0 ? (double)ht2.totalSondas / ventanasValidas : 0.0)
+                 << " | Colisiones: " << ht2.colisiones
+                 << " | Max sondas: " << ht2.maxSondas << "\n";
+            cout << "  Linear Probing -> Sondas totales: " << ht2.sondasLinearProbing
+                 << " | Promedio: " << (ventanasValidas > 0 ? (double)ht2.sondasLinearProbing / ventanasValidas : 0.0)
+                 << " | Colisiones: " << ht2.colisionesLinearProbing
+                 << " | Max sondas: " << ht2.maxSondasLinearProbing << "\n";
+            cout << "[Contrastacion Max-Heap] Comparaciones realizadas (build + Top-" << n << "): "
+                 << maxHeap.comparacionesHeap << "\n";
         } else if (opcion == 3) {
             string id;
             double beta;

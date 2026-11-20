@@ -1,17 +1,12 @@
-#pragma once
-#include <iostream>
+#include "../include/parser.hpp"
 #include <fstream>
-#include <string>
+#include <sstream>
+#include <cctype>
 
-using namespace std;
+// ============================================================================
+// INCISO a) PARSER DE SECUENCIAS ADN (FASTA y TXT) CON ARREGLO DINAMICO
+// ============================================================================
 
-// a) Struct sugerido en el documento para cada secuencia
-struct DNASequence {
-    string id;       // MAC.US.x.239.M33262
-    string sequence; // ACTG...
-};
-
-// Verifica que el k-mer solo tenga nucleotidos validos (A, T, C, G)
 bool esKmerValido(const string& kmer) {
     for (int i = 0; i < (int)kmer.length(); i++) {
         char c = kmer[i];
@@ -22,71 +17,101 @@ bool esKmerValido(const string& kmer) {
     return true;
 }
 
-// Parser para leer las secuencias del archivo FASTA
-struct FastaParser {
-    DNASequence* lista;
-    int cantidad;
-    int capacidad;
+FastaParser::FastaParser() {
+    capacidad = 20;
+    cantidad = 0;
+    lista = new DNASequence[capacidad];
+}
 
-    FastaParser() {
-        capacidad = 20;
-        cantidad = 0;
-        lista = new DNASequence[capacidad];
+FastaParser::~FastaParser() {
+    delete[] lista;
+}
+
+void FastaParser::agrandarLista() {
+    int nuevaCap = capacidad * 2;
+    DNASequence* nuevaLista = new DNASequence[nuevaCap];
+    for (int i = 0; i < cantidad; i++) {
+        nuevaLista[i] = lista[i];
     }
+    delete[] lista;
+    lista = nuevaLista;
+    capacidad = nuevaCap;
+}
 
-    ~FastaParser() {
-        delete[] lista;
-    }
+bool FastaParser::cargarArchivo(const string& rutaArchivo) {
+    ifstream archivo(rutaArchivo.c_str());
+    if (!archivo.is_open()) return false;
 
-    void agrandarLista() {
-        int nuevaCap = capacidad * 2;
-        DNASequence* nuevaLista = new DNASequence[nuevaCap];
-        for (int i = 0; i < cantidad; i++) {
-            nuevaLista[i] = lista[i];
+    cantidad = 0;
+    string linea;
+
+    DNASequence actual;
+    actual.id = "";
+    actual.sequence = "";
+
+    while (getline(archivo, linea)) {
+        // Limpiar saltos de linea de Windows ('\r') y espacios al final
+        while (!linea.empty() && (linea[linea.length() - 1] == '\r' ||
+                                  linea[linea.length() - 1] == '\n' ||
+                                  linea[linea.length() - 1] == ' ')) {
+            linea.erase(linea.length() - 1);
         }
-        delete[] lista;
-        lista = nuevaLista;
-        capacidad = nuevaCap;
-    }
+        if (linea.empty()) continue;
 
-    bool cargarArchivo(const string& rutaArchivo) {
-        ifstream archivo(rutaArchivo.c_str());
-        if (!archivo.is_open()) return false;
-
-        cantidad = 0;
-        string linea;
-        string idActual = "";
-        string seqActual = "";
-
-        while (getline(archivo, linea)) {
-            while (!linea.empty() && (linea.back() == '\r' || linea.back() == '\n' || linea.back() == ' ')) {
-                linea.pop_back();
+        if (linea[0] == '>') {
+            // Guardar la secuencia anterior si ya teniamos una acumulada
+            if (actual.id != "" && actual.sequence != "") {
+                if (cantidad >= capacidad) agrandarLista();
+                lista[cantidad] = actual;
+                cantidad++;
             }
-            if (linea.empty()) continue;
 
-            if (linea[0] == '>') {
-                if (!idActual.empty()) {
-                    if (cantidad >= capacidad) agrandarLista();
-                    lista[cantidad].id = idActual;
-                    lista[cantidad].sequence = seqActual;
-                    cantidad++;
+            // Extraer el nuevo ID despues del simbolo '>'
+            stringstream ss(linea.substr(1));
+            ss >> actual.id;
+            actual.sequence = "";
+        }
+        else if (actual.id != "") {
+            // Formato FASTA: acumular solo nucleotidos validos en mayuscula
+            for (int i = 0; i < (int)linea.length(); i++) {
+                char c = toupper((unsigned char)linea[i]);
+                if (c == 'A' || c == 'T' || c == 'C' || c == 'G') {
+                    actual.sequence += c;
                 }
-                idActual = linea.substr(1); // Quitar '>'
-                seqActual = "";
-            } else {
-                seqActual += linea;
             }
         }
+        else {
+            // Formato alternativo .txt en una sola linea: "ID SECUENCIA"
+            stringstream ss(linea);
+            DNASequence dna;
+            string parte;
+            ss >> dna.id;
+            dna.sequence = "";
 
-        // Guardar la ultima secuencia del archivo
-        if (!idActual.empty()) {
-            if (cantidad >= capacidad) agrandarLista();
-            lista[cantidad].id = idActual;
-            lista[cantidad].sequence = seqActual;
-            cantidad++;
+            while (ss >> parte) {
+                for (int i = 0; i < (int)parte.length(); i++) {
+                    char c = toupper((unsigned char)parte[i]);
+                    if (c == 'A' || c == 'T' || c == 'C' || c == 'G') {
+                        dna.sequence += c;
+                    }
+                }
+            }
+
+            if (dna.id != "" && dna.sequence != "") {
+                if (cantidad >= capacidad) agrandarLista();
+                lista[cantidad] = dna;
+                cantidad++;
+            }
         }
-
-        archivo.close();
-        return cantidad > 0;
     }
-};
+
+    // Guardar la ultima secuencia del archivo FASTA
+    if (actual.id != "" && actual.sequence != "") {
+        if (cantidad >= capacidad) agrandarLista();
+        lista[cantidad] = actual;
+        cantidad++;
+    }
+
+    archivo.close();
+    return cantidad > 0;
+}
