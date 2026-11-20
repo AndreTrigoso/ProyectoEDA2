@@ -30,6 +30,8 @@ struct MaxHeapKmers {
 
     MaxHeapKmers();
     ~MaxHeapKmers();
+    MaxHeapKmers(const MaxHeapKmers&) = delete;
+    MaxHeapKmers& operator=(const MaxHeapKmers&) = delete;
 
     void intercambiar(int i, int j);
     void subir(int idx);

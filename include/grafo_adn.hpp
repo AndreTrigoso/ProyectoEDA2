@@ -26,6 +26,8 @@ struct GrafoADN {
 
     GrafoADN();
     ~GrafoADN();
+    GrafoADN(const GrafoADN&) = delete;
+    GrafoADN& operator=(const GrafoADN&) = delete;
 
     int obtenerOAgregarVertice(const string& par);
     void construirGrafo(const string& secuencia, double valorBeta = 1.0);

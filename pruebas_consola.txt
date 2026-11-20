@@ -1,0 +1,373 @@
+================================================================================
+PRUEBAS DE CORRECTITUD EN CONSOLA C++ (genomic_engine.exe)
+ProyectoEDA2 - Sistema de Analisis Genomico basado en k-mers y Grafos
+================================================================================
+
+0. COMPILACION Y EJECUCION EN WINDOWS (PowerShell)
+--------------------------------------------------------------------------------
+Ubicarse en la carpeta del proyecto (donde esta HIV2_ALL_2021_env_DNA.2000.fasta)
+y compilar el motor C++ ejecutando:
+
+    .\build.bat
+
+Luego iniciar la interfaz de consola en C++ con:
+
+    .\genomic_engine.exe
+
+Nota: cada caso de prueba describe las entradas exactas que debes escribir en
+el menu interactivo (una por linea, presionando Enter) y la salida esperada real.
+
+
+================================================================================
+CASO 0: Arranque, Parser FASTA y Tabla Hash 1 (Linear Probing)
+================================================================================
+Que verifica:
+- Lectura completa del archivo HIV2_ALL_2021_env_DNA.2000.fasta (218 cepas).
+- Inicio de TablaHashLineal con capacidad 10 y rehashes a primos m cada vez
+  que el load factor supera 1.0 (10 -> 23 -> 53 -> 109 -> 223).
+
+Entradas:
+    0
+
+Resultado esperado al iniciar:
+    Secuencias cargadas: 218
+    Tamano final Tabla Hash 1 (primo m): 223 | Load Factor: 0.977578
+    [Contrastacion HT1 - Linear Probing] Rehashes: 4 | Sondas totales: 1799 | Promedio: 8.2523 | Colisiones: 1581 | Max sondas: 131
+
+
+================================================================================
+CASO 1: Opcion 1 - Busqueda en Tabla Hash 1 (ID existente e inexistente)
+================================================================================
+Que verifica:
+- Busqueda exacta por clave (ID) en TablaHashLineal con linear probing.
+- Deteccion de clave inexistente al topar con una casilla vacia.
+
+Entradas:
+    1
+    MAC.US.x.239.M33262
+    1
+    NO_EXISTE
+    0
+
+Resultado esperado:
+- Para MAC.US.x.239.M33262:
+    Encontrado! Longitud: 2640
+    Prefijo: ATGGGATGTCTTGGGAATCAGCTGCTTATCGCCATCTTGCTTTTAAGTGT...
+    [Contrastacion] Sondas en busqueda HT1: 1
+- Para NO_EXISTE:
+    No encontrado (sondas: 76).
+
+
+================================================================================
+CASO 2: Opcion 5 - Ejemplo del PDF de 3-mers (ATGGGATGTCTTG)
+================================================================================
+Que verifica:
+- Extraccion de 3-mers por ventana deslizante con desplazamiento de 1 caracter.
+- Tabla Hash 2 con Double Hashing y tamano 4^3 = 64 bins.
+- Coincidencia exacta con los conteos del enunciado (proyecto.pdf).
+
+Entradas:
+    5
+    0
+
+Resultado esperado:
+    Cadena: ATGGGATGTCTTG (Tabla Hash 2 = 64 bins)
+    ATG: 2
+    TGG: 1
+    GGG: 1
+    GGA: 1
+    GAT: 1
+
+
+================================================================================
+CASO 3: Opcion 2 - Conteo de 3-mers (4^3 = 64) y Top-5 con Max-Heap
+================================================================================
+Que verifica:
+- Procesamiento completo de MAC.US.x.239.M33262 (2640 bases -> 2638 ventanas).
+- Saturacion de los 64 bins posibles con Double Hashing.
+- Orden decreciente correcto del Max-Heap y metricas de contrastacion.
+
+Entradas:
+    2
+    MAC.US.x.239.M33262
+    3
+    5
+    0
+
+Resultado esperado:
+    Tamano Tabla Hash 2 (4^3): 64 bins
+    K-mers distintos guardados: 64
+
+    Top 5 k-mers mas frecuentes:
+      #1: AGA -> 91
+      #2: CAA -> 78
+      #3: TGG -> 76
+      #4: AAT -> 72
+      #5: AAA -> 70
+
+    [Contrastacion HT2 (M = 64, ventanas = 2638)]
+      Double Hashing -> Sondas totales: 6548 | Promedio: 2.4822 | Colisiones: 3910 | Max sondas: 60
+      Linear Probing -> Sondas totales: 8853 | Promedio: 3.3560 | Colisiones: 6215 | Max sondas: 20
+    [Contrastacion Max-Heap] Comparaciones realizadas (build + Top-5): 172
+
+
+================================================================================
+CASO 4: Opcion 2 + Opcion 6 - 6-mers (4^6 = 4096) y busqueda en Tabla Hash 2
+================================================================================
+Que verifica:
+- Redimensionamiento de TablaHashDoble a 4^6 = 4096 bins.
+- Top-5 con Max-Heap para k = 6.
+- Busqueda interactiva en Tabla Hash 2 (Opcion 6): mayusculas, minusculas y
+  k-mer ausente / posible nulomero en la secuencia.
+
+Entradas:
+    2
+    MAC.US.x.239.M33262
+    6
+    5
+    6
+    ACTTGG
+    6
+    acttgg
+    6
+    CCCCCC
+    0
+
+Resultado esperado:
+- En Opcion 2:
+    Tamano Tabla Hash 2 (4^6): 4096 bins
+    K-mers distintos guardados: 1705
+
+    Top 5 k-mers mas frecuentes:
+      #1: AACAGC -> 6
+      #2: CAAGAG -> 6
+      #3: ACTTGG -> 6
+      #4: TTGGTT -> 5
+      #5: CAACAG -> 5
+
+    [Contrastacion HT2 (M = 4096, ventanas = 2635)]
+      Double Hashing -> Sondas totales: 3332 | Promedio: 1.2645 | Colisiones: 697 | Max sondas: 6
+      Linear Probing -> Sondas totales: 4021 | Promedio: 1.5260 | Colisiones: 1386 | Max sondas: 27
+    [Contrastacion Max-Heap] Comparaciones realizadas (build + Top-5): 2987
+- En Opcion 6 ("ACTTGG"):
+    Encontrado! Frecuencia de ACTTGG: 6
+    [Contrastacion] Sondas en busqueda HT2: 1
+- En Opcion 6 ("acttgg"):
+    Encontrado! Frecuencia de ACTTGG: 6
+    [Contrastacion] Sondas en busqueda HT2: 1
+- En Opcion 6 ("CCCCCC"):
+    No encontrado (frecuencia = 0, ausente o posible nulomero en esta secuencia).
+    [Contrastacion] Sondas en busqueda HT2: 1
+
+
+================================================================================
+CASO 5: Secuencia con base ambigua IUPAC (A.FR.02.LA36GomM.KU168287)
+================================================================================
+Que verifica:
+- Que el parser conserva los caracteres IUPAC (ej. 'R' en la posicion 1239)
+  manteniendo la longitud real (2610) y evitando corrimiento de fase o k-mers
+  falsos al pegar bases adyacentes.
+- Que TablaHashDoble descarta unicamente las 3 ventanas de largo 3 que tocan
+  la 'R' (2608 ventanas totales - 3 con 'R' = 2605 ventanas validas).
+
+Entradas:
+    1
+    A.FR.02.LA36GomM.KU168287
+    2
+    A.FR.02.LA36GomM.KU168287
+    3
+    5
+    6
+    CAG
+    6
+    AGG
+    0
+
+Resultado esperado:
+- En Opcion 1:
+    Encontrado! Longitud: 2610
+    Prefijo: AAGATGTGTGGAAAAACTCAGCTGCTTATTGCCATTTTAATAACTAGTGC...
+    [Contrastacion] Sondas en busqueda HT1: 1
+- En Opcion 2 (k = 3, Top-5):
+    Tamano Tabla Hash 2 (4^3): 64 bins
+    K-mers distintos guardados: 64
+    Top 5 k-mers mas frecuentes:
+      #1: CAA -> 82
+      #2: AAA -> 82
+      #3: ACA -> 80
+      #4: AGA -> 79
+      #5: ATA -> 72
+    [Contrastacion HT2 (M = 64, ventanas = 2605)]
+      Double Hashing -> Sondas totales: 7137 | Promedio: 2.7397 | Colisiones: 4532 | Max sondas: 42
+      Linear Probing -> Sondas totales: 7857 | Promedio: 3.0161 | Colisiones: 5252 | Max sondas: 22
+    [Contrastacion Max-Heap] Comparaciones realizadas (build + Top-5): 179
+- En Opcion 6:
+    Frecuencia de CAG: 67  (sondas: 1)
+    Frecuencia de AGG: 59  (sondas: 1)
+
+
+================================================================================
+CASO 6: Opcion 4 - Ejemplo del PDF de Grafo (TCATTAGCAGTTAGCAGC, beta = 1)
+================================================================================
+Que verifica:
+- Division en pares disjuntos (1..9), calculo d = 1 / (j - i)^beta y suma de
+  aristas paralelas en la matriz 7x7 de adyacencia (Khan et al., 2024).
+
+Entradas:
+    4
+    0
+
+Resultado esperado:
+    Posicion | 2-mer
+           1 | TC
+           2 | AT
+           3 | TA
+           4 | GC
+           5 | AG
+           6 | TT
+           7 | AG
+           8 | CA
+           9 | GC
+
+    w(TC, AT) = 1.00000
+    w(AT, CA) = 0.16667
+
+    Matriz de Adyacencia (7x7, beta = 1.0000):
+                  TC        AT        TA        GC        AG        TT        CA
+      TC      0.0000    1.0000    0.5000    0.4583    0.4167    0.2000    0.1429
+      AT      0.0000    0.0000    1.0000    0.6429    0.5333    0.2500    0.1667
+      TA      0.0000    0.0000    0.0000    1.1667    0.7500    0.3333    0.2000
+      GC      0.0000    0.0000    0.0000    0.2000    1.3333    0.5000    0.2500
+      AG      0.0000    0.0000    0.0000    0.7500    0.5000    1.0000    1.3333
+      TT      0.0000    0.0000    0.0000    0.3333    1.0000    0.0000    0.5000
+      CA      0.0000    0.0000    0.0000    1.0000    0.0000    0.0000    0.0000
+
+
+================================================================================
+CASO 7: Opcion 3 - Grafo 16x16 de cepa HIV (MAC.US.x.239.M33262, beta = 1.0)
+================================================================================
+Que verifica:
+- Construccion del grafo ponderado completo de 16 vertices sobre una secuencia
+  real de 2640 pb (1320 pares de 2-mers) e impresion limpia de la matriz 16x16.
+
+Entradas:
+    3
+    MAC.US.x.239.M33262
+    1.0
+    0
+
+Resultado esperado (resumen de verificacion):
+    Matriz de Adyacencia (16x16, beta = 1.0000):
+    Columnas/filas: AT, GG, GA, TG, TC, TT, CA, GC, CT, TA, AA, GT, AC, AG, CC, CG
+    - Primera celda (AT -> AT): 50.7989
+    - Maximo global (AA -> CA): 85.0561  (y AA -> AA: 84.3654)
+    - Ultima celda  (CG -> CG): 3.1053
+
+
+================================================================================
+CASO 8: Opcion 6 - Validaciones de estado vacio, longitud y caracteres en HT2
+================================================================================
+Que verifica:
+- Que no permite buscar en Tabla Hash 2 antes de poblarla.
+- Que rechaza k-mers con longitud != k o caracteres fuera de A/T/C/G.
+
+Entradas:
+    6
+    5
+    6
+    ATGG
+    6
+    ATN
+    0
+
+Resultado esperado:
+- Primera llamada a 6 (antes de 2 o 5):
+    Tabla Hash 2 aun no tiene datos. Ejecute primero la opcion 2 o la opcion 5.
+- Luego de opcion 5 (k = 3) al buscar "ATGG":
+    Longitud invalida: el k-mer debe tener exactamente 3 nucleotidos.
+- Al buscar "ATN":
+    K-mer invalido: solo se permiten los nucleotidos A, T, C y G.
+
+
+================================================================================
+CASO 9: Entradas invalidas y limites (robustez sin crashes)
+================================================================================
+Que verifica:
+- Que ninguna entrada fuera de rango o no numerica produce division por cero,
+  desbordamiento de 4^k ni bucles infinitos en cin.
+
+Entradas:
+    99
+    hola
+    2
+    MAC.US.x.239.M33262
+    0
+    2
+    MAC.US.x.239.M33262
+    -1
+    2
+    MAC.US.x.239.M33262
+    16
+    2
+    MAC.US.x.239.M33262
+    abc
+    2
+    MAC.US.x.239.M33262
+    3
+    0
+    3
+    MAC.US.x.239.M33262
+    -1
+    3
+    MAC.US.x.239.M33262
+    0
+    3
+    MAC.US.x.239.M33262
+    xyz
+    0
+
+Resultado esperado:
+- 99   -> Opcion invalida. Ingrese un numero entre 0 y 6.
+- hola -> Entrada invalida. Ingrese un numero entre 0 y 6.
+- k = 0, -1, 16, abc -> Longitud k invalida. Debe ser un entero entre 1 y 10.
+- n = 0 -> Cantidad n invalida. Debe ser un entero mayor o igual a 1.
+- beta = -1, 0, xyz -> Valor de beta invalido. Debe ser un numero positivo mayor que 0.
+- Codigo de salida del proceso: 0 (sin crashes).
+
+
+================================================================================
+REPRODUCCION AUTOMATICA EN POWERSHELL (COPIAR Y PEGAR EN LA CARPETA DEL PROYECTO)
+================================================================================
+Pega este bloque en PowerShell dentro de ProyectoEDA2 para ejecutar los 10
+casos automaticamente contra .\genomic_engine.exe y comprobar que todos terminan
+con codigo de salida 0 y las salidas esperadas:
+
+$pruebas = @(
+    @{ Nombre = "Caso 0 (Arranque y salida)"; Input = "0`n"; Checks = @("Secuencias cargadas: 218", "Tamano final Tabla Hash 1 (primo m): 223 | Load Factor: 0.977578", "Rehashes: 4 | Sondas totales: 1799 | Promedio: 8.2523 | Colisiones: 1581 | Max sondas: 131") },
+    @{ Nombre = "Caso 1 (HT1 buscar ID)"; Input = "1`nMAC.US.x.239.M33262`n1`nNO_EXISTE`n0`n"; Checks = @("Encontrado! Longitud: 2640", "Sondas en busqueda HT1: 1", "No encontrado (sondas: 76).") },
+    @{ Nombre = "Caso 2 (PDF 3-mers)"; Input = "5`n0`n"; Checks = @("ATG: 2", "TGG: 1", "GGG: 1", "GGA: 1", "GAT: 1") },
+    @{ Nombre = "Caso 3 (MAC k=3 Top-5)"; Input = "2`nMAC.US.x.239.M33262`n3`n5`n0`n"; Checks = @("Tamano Tabla Hash 2 (4^3): 64 bins", "#1: AGA -> 91", "#5: AAA -> 70", "Sondas totales: 6548", "Comparaciones realizadas (build + Top-5): 172") },
+    @{ Nombre = "Caso 4 (MAC k=6 y Opcion 6)"; Input = "2`nMAC.US.x.239.M33262`n6`n5`n6`nACTTGG`n6`nacttgg`n6`nCCCCCC`n0`n"; Checks = @("Tamano Tabla Hash 2 (4^6): 4096 bins", "K-mers distintos guardados: 1705", "Encontrado! Frecuencia de ACTTGG: 6", "No encontrado (frecuencia = 0, ausente o posible nulomero en esta secuencia).") },
+    @{ Nombre = "Caso 5 (IUPAC A.FR.02.LA36GomM.KU168287)"; Input = "1`nA.FR.02.LA36GomM.KU168287`n2`nA.FR.02.LA36GomM.KU168287`n3`n5`n6`nCAG`n6`nAGG`n0`n"; Checks = @("Encontrado! Longitud: 2610", "ventanas = 2605", "Frecuencia de CAG: 67", "Frecuencia de AGG: 59") },
+    @{ Nombre = "Caso 6 (PDF Grafo)"; Input = "4`n0`n"; Checks = @("w(TC, AT) = 1.00000", "w(AT, CA) = 0.16667", "Matriz de Adyacencia (7x7, beta = 1.0000):") },
+    @{ Nombre = "Caso 7 (Grafo MAC 16x16)"; Input = "3`nMAC.US.x.239.M33262`n1.0`n0`n"; Checks = @("Matriz de Adyacencia (16x16, beta = 1.0000):", "50.7989", "85.0561", "3.1053") },
+    @{ Nombre = "Caso 8 (Validaciones Opcion 6)"; Input = "6`n5`n6`nATGG`n6`nATN`n0`n"; Checks = @("Tabla Hash 2 aun no tiene datos.", "Longitud invalida: el k-mer debe tener exactamente 3 nucleotidos.", "K-mer invalido: solo se permiten los nucleotidos A, T, C y G.") },
+    @{ Nombre = "Caso 9 (Entradas invalidas)"; Input = "99`nhola`n2`nMAC.US.x.239.M33262`n0`n2`nMAC.US.x.239.M33262`n-1`n2`nMAC.US.x.239.M33262`n16`n2`nMAC.US.x.239.M33262`nabc`n2`nMAC.US.x.239.M33262`n3`n0`n3`nMAC.US.x.239.M33262`n-1`n3`nMAC.US.x.239.M33262`n0`n3`nMAC.US.x.239.M33262`nxyz`n0`n"; Checks = @("Opcion invalida. Ingrese un numero entre 0 y 6.", "Entrada invalida. Ingrese un numero entre 0 y 6.", "Longitud k invalida. Debe ser un entero entre 1 y 10.", "Cantidad n invalida. Debe ser un entero mayor o igual a 1.", "Valor de beta invalido. Debe ser un numero positivo mayor que 0.") }
+)
+
+foreach ($p in $pruebas) {
+    $salida = ($p.Input | .\genomic_engine.exe) -join "`n"
+    $rc = $LASTEXITCODE
+    $ok = ($rc -eq 0)
+    foreach ($c in $p.Checks) {
+        if (-not $salida.Contains($c)) {
+            $ok = $false
+            Write-Host "[FALLO] $($p.Nombre): no se encontro '$c'" -ForegroundColor Red
+        }
+    }
+    if ($ok) {
+        Write-Host "[OK] $($p.Nombre) (exit=$rc)" -ForegroundColor Green
+    } else {
+        Write-Host "[ERROR] $($p.Nombre) (exit=$rc)" -ForegroundColor Red
+    }
+}

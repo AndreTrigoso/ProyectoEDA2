@@ -4,7 +4,7 @@ setlocal
 where g++ >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
     echo [BUILD] Compilando con g++...
-    g++ -std=c++17 -O2 -Iinclude src/parser.cpp src/tablas_hash.cpp src/max_heap.cpp src/grafo_adn.cpp src/main.cpp -o genomic_engine.exe
+    g++ -std=c++17 -O2 -static -Iinclude src/parser.cpp src/tablas_hash.cpp src/max_heap.cpp src/grafo_adn.cpp src/main.cpp -o genomic_engine.exe
     if %ERRORLEVEL% EQU 0 (
         echo [OK] Compilado exitosamente: genomic_engine.exe
         exit /b 0

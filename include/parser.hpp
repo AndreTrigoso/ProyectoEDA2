@@ -22,6 +22,8 @@ struct FastaParser {
 
     FastaParser();
     ~FastaParser();
+    FastaParser(const FastaParser&) = delete;
+    FastaParser& operator=(const FastaParser&) = delete;
 
     void agrandarLista();
     bool cargarArchivo(const string& rutaArchivo);

@@ -6,6 +6,9 @@
 
 using namespace std;
 
+// Limite seguro para 4^k en TablaHashDoble (4^10 = 1,048,576 casillas)
+const int MAX_K_VALIDO = 10;
+
 // Funciones matematicas basicas
 bool esPrimo(int n);
 int siguientePrimo(int numero);
@@ -43,6 +46,8 @@ struct TablaHashLineal {
 
     TablaHashLineal(int tamInicial = 10);
     ~TablaHashLineal();
+    TablaHashLineal(const TablaHashLineal&) = delete;
+    TablaHashLineal& operator=(const TablaHashLineal&) = delete;
 
     unsigned long funcionHash(const string& id) const;
     double obtenerLoadFactor() const;
@@ -88,6 +93,8 @@ struct TablaHashDoble {
 
     TablaHashDoble(int k = 3);
     ~TablaHashDoble();
+    TablaHashDoble(const TablaHashDoble&) = delete;
+    TablaHashDoble& operator=(const TablaHashDoble&) = delete;
 
     void configurarTamano(int nuevoK);
     unsigned long hash1(const string& kmer) const;

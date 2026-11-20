@@ -1,5 +1,6 @@
 #include "../include/grafo_adn.hpp"
 #include <cmath>
+#include <cctype>
 
 
 // d) GRAFO DIRIGIDO DE 2-MERS Y MATRIZ DE ADYACENCIA (Khan et al. 2024)
@@ -30,6 +31,7 @@ int GrafoADN::obtenerOAgregarVertice(const string& par) {
             return v;
         }
     }
+    if (numVertices >= 16) return -1;
     vertices[numVertices] = par;
     numVertices++;
     return numVertices - 1;
@@ -54,24 +56,30 @@ void GrafoADN::construirGrafo(const string& secuencia, double valorBeta) {
 
     // Arreglo dinamico con los 2-mers en sus posiciones 1..numPares
     listaPares = new ParPosicion[numPares];
+    int* vertIdx = new int[numPares];
     for (int i = 0; i < numPares; i++) {
         string par = secuencia.substr(i * 2, 2);
+        for (int c = 0; c < (int)par.length(); c++) {
+            par[c] = static_cast<char>(toupper(static_cast<unsigned char>(par[c])));
+        }
         if (!esKmerValido(par)) continue;
+
+        int v = obtenerOAgregarVertice(par);
+        if (v < 0) continue;
 
         listaPares[cantidadPares].posicion = i + 1;
         listaPares[cantidadPares].par = par;
+        vertIdx[cantidadPares] = v;
         cantidadPares++;
-
-        obtenerOAgregarVertice(par);
     }
 
     // Calcular pesos d = 1 / (j - i)^beta para cada pareja i < j
     for (int i = 0; i < cantidadPares; i++) {
-        int u = obtenerOAgregarVertice(listaPares[i].par);
+        int u = vertIdx[i];
         int posI = listaPares[i].posicion;
 
         for (int j = i + 1; j < cantidadPares; j++) {
-            int v = obtenerOAgregarVertice(listaPares[j].par);
+            int v = vertIdx[j];
             int posJ = listaPares[j].posicion;
 
             double dist = (double)(posJ - posI);
@@ -79,15 +87,25 @@ void GrafoADN::construirGrafo(const string& secuencia, double valorBeta) {
             matriz[u][v] += w;
         }
     }
+    delete[] vertIdx;
 }
 
 double GrafoADN::obtenerPeso(const string& origen, const string& destino) const {
+    string origMayus = origen;
+    for (int c = 0; c < (int)origMayus.length(); c++) {
+        origMayus[c] = static_cast<char>(toupper(static_cast<unsigned char>(origMayus[c])));
+    }
+    string destMayus = destino;
+    for (int c = 0; c < (int)destMayus.length(); c++) {
+        destMayus[c] = static_cast<char>(toupper(static_cast<unsigned char>(destMayus[c])));
+    }
+
     int u = -1;
     int v = -1;
 
     for (int k = 0; k < numVertices; k++) {
-        if (vertices[k] == origen) u = k;
-        if (vertices[k] == destino) v = k;
+        if (vertices[k] == origMayus) u = k;
+        if (vertices[k] == destMayus) v = k;
     }
 
     if (u == -1 || v == -1) return 0.0;

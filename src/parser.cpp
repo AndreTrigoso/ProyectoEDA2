@@ -8,6 +8,7 @@
 // ============================================================================
 
 bool esKmerValido(const string& kmer) {
+    if (kmer.empty()) return false;
     for (int i = 0; i < (int)kmer.length(); i++) {
         char c = kmer[i];
         if (c != 'A' && c != 'T' && c != 'C' && c != 'G') {
@@ -44,16 +45,28 @@ bool FastaParser::cargarArchivo(const string& rutaArchivo) {
 
     cantidad = 0;
     string linea;
+    bool primeraLinea = true;
 
     DNASequence actual;
     actual.id = "";
     actual.sequence = "";
 
     while (getline(archivo, linea)) {
+        if (primeraLinea) {
+            primeraLinea = false;
+            if (linea.size() >= 3 &&
+                static_cast<unsigned char>(linea[0]) == 0xEF &&
+                static_cast<unsigned char>(linea[1]) == 0xBB &&
+                static_cast<unsigned char>(linea[2]) == 0xBF) {
+                linea.erase(0, 3);
+            }
+        }
+
         // Limpiar saltos de linea de Windows ('\r') y espacios al final
         while (!linea.empty() && (linea[linea.length() - 1] == '\r' ||
                                   linea[linea.length() - 1] == '\n' ||
-                                  linea[linea.length() - 1] == ' ')) {
+                                  linea[linea.length() - 1] == ' ' ||
+                                  linea[linea.length() - 1] == '\t')) {
             linea.erase(linea.length() - 1);
         }
         if (linea.empty()) continue;
@@ -72,10 +85,12 @@ bool FastaParser::cargarArchivo(const string& rutaArchivo) {
             actual.sequence = "";
         }
         else if (actual.id != "") {
-            // Formato FASTA: acumular solo nucleotidos validos en mayuscula
+            // Formato FASTA: conservar todas las letras en mayuscula (incluidas
+            // bases ambiguas IUPAC como N, R, Y) para no corromper la fase de lectura
             for (int i = 0; i < (int)linea.length(); i++) {
-                char c = toupper((unsigned char)linea[i]);
-                if (c == 'A' || c == 'T' || c == 'C' || c == 'G') {
+                unsigned char uc = static_cast<unsigned char>(linea[i]);
+                if (isalpha(uc)) {
+                    char c = static_cast<char>(toupper(uc));
                     actual.sequence += c;
                 }
             }
@@ -90,8 +105,9 @@ bool FastaParser::cargarArchivo(const string& rutaArchivo) {
 
             while (ss >> parte) {
                 for (int i = 0; i < (int)parte.length(); i++) {
-                    char c = toupper((unsigned char)parte[i]);
-                    if (c == 'A' || c == 'T' || c == 'C' || c == 'G') {
+                    unsigned char uc = static_cast<unsigned char>(parte[i]);
+                    if (isalpha(uc)) {
+                        char c = static_cast<char>(toupper(uc));
                         dna.sequence += c;
                     }
                 }
