@@ -25,6 +25,13 @@ struct CasillaSeq {
     CasillaSeq();
 };
 
+struct RehashEvento {
+    int oldCap;
+    int newCap;
+    int elements;
+    double loadFactor;
+};
+
 struct TablaHashLineal {
     CasillaSeq* tabla;
     int capacidad;
@@ -43,6 +50,8 @@ struct TablaHashLineal {
     int numRehashes;
     mutable int ultimasSondasBusqueda;
     bool enRehash;
+    RehashEvento rehashHistorial[32];
+    int rehashHistorialCount;
 
     TablaHashLineal(int tamInicial = 10);
     ~TablaHashLineal();

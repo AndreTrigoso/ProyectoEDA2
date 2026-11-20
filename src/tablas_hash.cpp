@@ -58,6 +58,7 @@ TablaHashLineal::TablaHashLineal(int tamInicial) {
     numRehashes = 0;
     ultimasSondasBusqueda = 0;
     enRehash = false;
+    rehashHistorialCount = 0;
 }
 
 TablaHashLineal::~TablaHashLineal() {
@@ -131,6 +132,14 @@ void TablaHashLineal::insertar(const DNASequence& seq) {
         // como el id es nuevo y el load factor pasaria de 1.0, buscamos el siguiente primo >= 2*(elementos+1)
         // ese primo garantiza que el nuevo load factor caiga a <= 0.5
         int primoM = siguientePrimo((elementos + 1) * 2);
+        if (!enRehash && rehashHistorialCount < 32) {
+            rehashHistorial[rehashHistorialCount++] = {
+                capacidad,
+                primoM,
+                elementos + 1,
+                (double)(elementos + 1) / (double)primoM
+            };
+        }
         redimensionar(primoM);
     }
 
@@ -204,6 +213,7 @@ void TablaHashLineal::reiniciar() {
     numRehashes = 0;
     ultimasSondasBusqueda = 0;
     enRehash = false;
+    rehashHistorialCount = 0;
 }
 
 // ============================================================================

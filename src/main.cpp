@@ -71,6 +71,28 @@ void imprimirMatriz(const GrafoADN& grafo) {
     }
 }
 
+// Escapa caracteres especiales para construir cadenas JSON validas de una sola linea
+string escaparJson(const string& s) {
+    string res;
+    res.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        char c = s[i];
+        switch (c) {
+            case '\\': res += "\\\\"; break;
+            case '"':  res += "\\\""; break;
+            case '\n': res += "\\n"; break;
+            case '\r': res += "\\r"; break;
+            case '\t': res += "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(c) >= 0x20) {
+                    res += c;
+                }
+                break;
+        }
+    }
+    return res;
+}
+
 // Modo servidor para conectar con la interfaz grafica en Python (gui/app.py)
 int ejecutarModoServidor(const string& rutaFasta) {
     FastaParser parser;
@@ -99,28 +121,47 @@ int ejecutarModoServidor(const string& rutaFasta) {
             if (cmd == "LOAD_FASTA") {
                 string nuevaRuta;
                 getline(iss >> ws, nuevaRuta);
+                FastaParser tempParser;
+                if (nuevaRuta.empty() || !tempParser.cargarArchivo(nuevaRuta)) {
+                    cout << "{\"ok\":false,\"message\":\"No se pudo cargar el archivo FASTA o no contiene secuencias ADN validas: "
+                         << escaparJson(nuevaRuta) << "\"}" << endl;
+                    continue;
+                }
+                if (!parser.cargarArchivo(nuevaRuta)) {
+                    cout << "{\"ok\":false,\"message\":\"Error al recargar el archivo FASTA.\"}" << endl;
+                    continue;
+                }
                 ht1.reiniciar();
-                if (parser.cargarArchivo(nuevaRuta)) {
-                    for (int i = 0; i < parser.cantidad; i++) {
-                        ht1.insertar(parser.lista[i]);
-                    }
+                for (int i = 0; i < parser.cantidad; i++) {
+                    ht1.insertar(parser.lista[i]);
                 }
             }
             ostringstream out;
             out << fixed << setprecision(4);
-            // [GENERADO POR IA PARA CONTRASTACION] Usa ht1.colisiones reales
+            // [GENERADO POR IA PARA CONTRASTACION] Usa ht1.colisiones, sondas y rehashes reales
             out << "{\"ok\":true,\"fastaCount\":" << parser.cantidad
                 << ",\"ht1Capacity\":" << ht1.capacidad
                 << ",\"ht1Count\":" << ht1.elementos
                 << ",\"ht1LoadFactor\":" << ht1.obtenerLoadFactor()
                 << ",\"ht1Collisions\":" << ht1.colisiones
-                << ",\"ht1Rehashes\":[],\"sequences\":[";
+                << ",\"ht1TotalProbes\":" << ht1.totalSondas
+                << ",\"ht1MaxProbes\":" << ht1.maxSondas
+                << ",\"ht1Rehashes\":[";
+            for (int i = 0; i < ht1.rehashHistorialCount; i++) {
+                if (i > 0) out << ",";
+                out << "{\"oldCap\":" << ht1.rehashHistorial[i].oldCap
+                    << ",\"newCap\":" << ht1.rehashHistorial[i].newCap
+                    << ",\"elements\":" << ht1.rehashHistorial[i].elements
+                    << ",\"loadFactor\":" << ht1.rehashHistorial[i].loadFactor << "}";
+            }
+            out << "],\"sequences\":[";
             for (int i = 0; i < parser.cantidad; i++) {
                 if (i > 0) out << ",";
-                string prev = parser.lista[i].sequence.substr(0, 36) + "...";
-                out << "{\"index\":" << i << ",\"id\":\"" << parser.lista[i].id
+                string prev = parser.lista[i].sequence.substr(0, 36);
+                if (parser.lista[i].sequence.length() > 36) prev += "...";
+                out << "{\"index\":" << i << ",\"id\":\"" << escaparJson(parser.lista[i].id)
                     << "\",\"length\":" << parser.lista[i].sequence.length()
-                    << ",\"preview\":\"" << prev << "\"}";
+                    << ",\"preview\":\"" << escaparJson(prev) << "\"}";
             }
             out << "]}";
             cout << out.str() << endl;
@@ -130,59 +171,109 @@ int ejecutarModoServidor(const string& rutaFasta) {
             const DNASequence* seq = ht1.buscar(id);
             if (seq) {
                 // [GENERADO POR IA PARA CONTRASTACION] Expone ultimasSondasBusqueda reales
-                cout << "{\"ok\":true,\"found\":true,\"id\":\"" << seq->id
+                cout << "{\"ok\":true,\"found\":true,\"id\":\"" << escaparJson(seq->id)
                      << "\",\"length\":" << seq->sequence.length()
                      << ",\"comparisons\":" << ht1.ultimasSondasBusqueda
-                     << ",\"sequence\":\"" << seq->sequence << "\"}" << endl;
+                     << ",\"sequence\":\"" << escaparJson(seq->sequence) << "\"}" << endl;
             } else {
-                cout << "{\"ok\":true,\"found\":false,\"id\":\"" << id
+                cout << "{\"ok\":true,\"found\":false,\"id\":\"" << escaparJson(id)
                      << "\",\"comparisons\":" << ht1.ultimasSondasBusqueda << "}" << endl;
             }
-        } else if (cmd == "ANALYZE_KMERS") {
-            string id;
+        } else if (cmd == "ANALYZE_KMERS" || cmd == "ANALYZE_KMERS_RAW") {
+            string entrada, tokK, tokTopN;
             int k = 3, topN = 10;
-            iss >> id >> k >> topN;
+            if (!(iss >> entrada)) {
+                cout << "{\"ok\":false,\"message\":\"Falta el ID o la secuencia de entrada.\"}" << endl;
+                continue;
+            }
+            if (iss >> tokK) {
+                istringstream issK(tokK);
+                char extra;
+                if (!(issK >> k) || (issK >> extra)) {
+                    cout << "{\"ok\":false,\"message\":\"Parametro k invalido (debe ser entero 1..10).\"}" << endl;
+                    continue;
+                }
+            }
+            if (iss >> tokTopN) {
+                istringstream issN(tokTopN);
+                char extra;
+                if (!(issN >> topN) || (issN >> extra)) {
+                    cout << "{\"ok\":false,\"message\":\"Parametro topN invalido (debe ser entero >= 1).\"}" << endl;
+                    continue;
+                }
+            }
             if (k < 1 || k > MAX_K_VALIDO) {
-                cout << "{\"ok\":false,\"message\":\"k fuera de rango (1..10)\"}" << endl;
+                cout << "{\"ok\":false,\"message\":\"k fuera de rango (1..10).\"}" << endl;
                 continue;
             }
-            const DNASequence* seq = ht1.buscar(id);
-            if (!seq) {
-                cout << "{\"ok\":false,\"message\":\"No encontrado\"}" << endl;
+            if (topN < 1) {
+                cout << "{\"ok\":false,\"message\":\"topN debe ser mayor o igual a 1.\"}" << endl;
                 continue;
             }
+
+            string seqId;
+            string secuencia;
+            if (cmd == "ANALYZE_KMERS") {
+                const DNASequence* seq = ht1.buscar(entrada);
+                if (!seq) {
+                    cout << "{\"ok\":false,\"message\":\"Secuencia no encontrada en HT1.\"}" << endl;
+                    continue;
+                }
+                seqId = seq->id;
+                secuencia = seq->sequence;
+            } else {
+                seqId = "Secuencia Personalizada";
+                secuencia = entrada;
+                for (size_t i = 0; i < secuencia.size(); i++) {
+                    secuencia[i] = static_cast<char>(toupper(static_cast<unsigned char>(secuencia[i])));
+                }
+            }
+
+            if (static_cast<int>(secuencia.length()) < k) {
+                cout << "{\"ok\":false,\"message\":\"La secuencia es mas corta que k.\"}" << endl;
+                continue;
+            }
+
             ht2.configurarTamano(k);
-            ht2.procesarSecuencia(seq->sequence);
+            ht2.procesarSecuencia(secuencia);
             maxHeap.construirDesdeTablaHash(ht2);
 
             int totalValidos = ht2.totalSondas - ht2.colisiones;
+            ostringstream topJson;
+            int limite = (topN < maxHeap.tamano) ? topN : maxHeap.tamano;
+            for (int i = 0; i < limite; i++) {
+                if (i > 0) topJson << ",";
+                NodoHeap maximo = maxHeap.extraerMaximo();
+                topJson << "{\"rank\":" << (i + 1) << ",\"kmer\":\"" << escaparJson(maximo.kmer)
+                        << "\",\"count\":" << maximo.conteo << "}";
+            }
+
             ostringstream out;
             out << fixed << setprecision(4);
-            // [GENERADO POR IA PARA CONTRASTACION] Expone ht2.colisiones y metricas reales
-            out << "{\"ok\":true,\"seqId\":\"" << seq->id
-                << "\",\"seqLength\":" << seq->sequence.length()
+            // [GENERADO POR IA PARA CONTRASTACION] Expone DH vs Linear Probing y comparaciones Heap
+            out << "{\"ok\":true,\"seqId\":\"" << escaparJson(seqId)
+                << "\",\"seqLength\":" << secuencia.length()
                 << ",\"k\":" << ht2.longitudK
                 << ",\"ht2Capacity\":" << ht2.capacidad
                 << ",\"ht2Unique\":" << ht2.kmersUnicos
                 << ",\"ht2TotalValid\":" << totalValidos
                 << ",\"ht2LoadFactor\":" << (double)ht2.kmersUnicos / ht2.capacidad
-                << ",\"ht2Collisions\":" << ht2.colisiones << ",\"topKmers\":[";
-
-            int limite = (topN < maxHeap.tamano) ? topN : maxHeap.tamano;
-            for (int i = 0; i < limite; i++) {
-                if (i > 0) out << ",";
-                NodoHeap maximo = maxHeap.extraerMaximo();
-                out << "{\"rank\":" << (i + 1) << ",\"kmer\":\"" << maximo.kmer
-                    << "\",\"count\":" << maximo.conteo << "}";
-            }
-            out << "],\"slots\":[";
+                << ",\"ht2Collisions\":" << ht2.colisiones
+                << ",\"ht2TotalProbes\":" << ht2.totalSondas
+                << ",\"ht2MaxProbes\":" << ht2.maxSondas
+                << ",\"lpTotalProbes\":" << ht2.sondasLinearProbing
+                << ",\"lpCollisions\":" << ht2.colisionesLinearProbing
+                << ",\"lpMaxProbes\":" << ht2.maxSondasLinearProbing
+                << ",\"topKmers\":[" << topJson.str() << "]"
+                << ",\"heapComparisons\":" << maxHeap.comparacionesHeap
+                << ",\"slots\":[";
             int mostrados = 0;
             for (int i = 0; i < ht2.capacidad && mostrados < 256; i++) {
                 if (ht2.capacidad <= 256 || ht2.tabla[i].ocupado) {
                     if (mostrados > 0) out << ",";
                     out << "{\"slot\":" << i
                         << ",\"occupied\":" << (ht2.tabla[i].ocupado ? "true" : "false")
-                        << ",\"kmer\":\"" << ht2.tabla[i].kmer << "\""
+                        << ",\"kmer\":\"" << escaparJson(ht2.tabla[i].kmer) << "\""
                         << ",\"count\":" << ht2.tabla[i].conteo
                         << ",\"probes\":" << ht2.tabla[i].sondas << "}";
                     mostrados++;
@@ -195,34 +286,61 @@ int ejecutarModoServidor(const string& rutaFasta) {
             iss >> kmer;
             int freq = ht2.buscar(kmer);
             // [GENERADO POR IA PARA CONTRASTACION] Expone ht2.ultimasSondasBusqueda reales
-            cout << "{\"ok\":true,\"kmer\":\"" << kmer
+            cout << "{\"ok\":true,\"kmer\":\"" << escaparJson(kmer)
                  << "\",\"found\":" << (freq > 0 ? "true" : "false")
                  << ",\"count\":" << freq << ",\"comparisons\":" << ht2.ultimasSondasBusqueda
                  << ",\"kLength\":" << ht2.longitudK
                  << ",\"capacity\":" << ht2.capacidad << "}" << endl;
         } else if (cmd == "BUILD_GRAPH_ID" || cmd == "BUILD_GRAPH_RAW") {
-            string entrada;
+            string entrada, tokBeta;
             double beta = 1.0;
-            iss >> entrada >> beta;
+            if (!(iss >> entrada)) {
+                cout << "{\"ok\":false,\"message\":\"Falta la secuencia o el ID de entrada.\"}" << endl;
+                continue;
+            }
+            if (iss >> tokBeta) {
+                istringstream issB(tokBeta);
+                char extra;
+                if (!(issB >> beta) || (issB >> extra)) {
+                    cout << "{\"ok\":false,\"message\":\"El valor de beta debe ser numerico.\"}" << endl;
+                    continue;
+                }
+            }
             if (!(beta > 0.0) || !isfinite(beta)) {
-                beta = 1.0;
+                cout << "{\"ok\":false,\"message\":\"El valor de beta debe ser estrictamente positivo (> 0).\"}" << endl;
+                continue;
             }
             string secuencia = entrada;
             string etiqueta = "Secuencia Personalizada";
             if (cmd == "BUILD_GRAPH_ID") {
                 const DNASequence* seq = ht1.buscar(entrada);
                 if (!seq) {
-                    cout << "{\"ok\":false}" << endl;
+                    cout << "{\"ok\":false,\"message\":\"Secuencia no encontrada en HT1.\"}" << endl;
                     continue;
                 }
                 secuencia = seq->sequence;
                 etiqueta = seq->id;
+            } else {
+                for (size_t i = 0; i < secuencia.size(); i++) {
+                    secuencia[i] = static_cast<char>(toupper(static_cast<unsigned char>(secuencia[i])));
+                }
             }
             grafo.construirGrafo(secuencia, beta);
+            if (grafo.cantidadPares <= 0) {
+                cout << "{\"ok\":false,\"message\":\"La secuencia no contiene dinucleotidos A/T/C/G validos.\"}" << endl;
+                continue;
+            }
+
+            static const char* CANONICAL_DINUCS[16] = {
+                "AA", "AC", "AG", "AT",
+                "CA", "CC", "CG", "CT",
+                "GA", "GC", "GG", "GT",
+                "TA", "TC", "TG", "TT"
+            };
 
             ostringstream out;
-            out << fixed << setprecision(5);
-            out << "{\"ok\":true,\"label\":\"" << etiqueta
+            out << fixed << setprecision(8);
+            out << "{\"ok\":true,\"label\":\"" << escaparJson(etiqueta)
                 << "\",\"seqLength\":" << secuencia.length()
                 << ",\"beta\":" << grafo.beta
                 << ",\"pairCount\":" << grafo.cantidadPares << ",\"pairs\":[";
@@ -230,12 +348,12 @@ int ejecutarModoServidor(const string& rutaFasta) {
             for (int i = 0; i < maxP; i++) {
                 if (i > 0) out << ",";
                 out << "{\"pos\":" << grafo.listaPares[i].posicion
-                    << ",\"pair\":\"" << grafo.listaPares[i].par << "\"}";
+                    << ",\"pair\":\"" << escaparJson(grafo.listaPares[i].par) << "\"}";
             }
             out << "],\"activeLabels\":[";
             for (int i = 0; i < grafo.numVertices; i++) {
                 if (i > 0) out << ",";
-                out << "\"" << grafo.vertices[i] << "\"";
+                out << "\"" << escaparJson(grafo.vertices[i]) << "\"";
             }
             out << "],\"activeMatrix\":[";
             for (int i = 0; i < grafo.numVertices; i++) {
@@ -247,7 +365,22 @@ int ejecutarModoServidor(const string& rutaFasta) {
                 }
                 out << "]";
             }
-            out << "],\"canonicalLabels\":[],\"canonicalMatrix\":[],"
+            out << "],\"canonicalLabels\":[";
+            for (int i = 0; i < 16; i++) {
+                if (i > 0) out << ",";
+                out << "\"" << CANONICAL_DINUCS[i] << "\"";
+            }
+            out << "],\"canonicalMatrix\":[";
+            for (int i = 0; i < 16; i++) {
+                if (i > 0) out << ",";
+                out << "[";
+                for (int j = 0; j < 16; j++) {
+                    if (j > 0) out << ",";
+                    out << grafo.obtenerPeso(CANONICAL_DINUCS[i], CANONICAL_DINUCS[j]);
+                }
+                out << "]";
+            }
+            out << "],"
                 << "\"w_TC_AT\":" << grafo.obtenerPeso("TC", "AT") << ","
                 << "\"w_AT_CA\":" << grafo.obtenerPeso("AT", "CA") << "}";
             cout << out.str() << endl;

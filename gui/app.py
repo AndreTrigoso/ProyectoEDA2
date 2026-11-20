@@ -42,18 +42,44 @@ class GenomicEngineClient:
             stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
+            errors="replace",
             bufsize=1,
             creationflags=creationflags,
         )
+        if self.proc.poll() is not None:
+            err = ""
+            try:
+                err = self.proc.stderr.read().strip()
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"El motor C++ terminó inesperadamente (código {self.proc.returncode})."
+                + (f"\nDetalle: {err}" if err else "")
+            )
 
     def send_command(self, command_line: str) -> dict:
         if self.proc is None or self.proc.poll() is not None:
             self._start_engine()
-        self.proc.stdin.write(command_line.strip() + "\n")
-        self.proc.stdin.flush()
-        response_line = self.proc.stdout.readline()
+        try:
+            self.proc.stdin.write(command_line.strip() + "\n")
+            self.proc.stdin.flush()
+            response_line = self.proc.stdout.readline()
+        except Exception as exc:
+            return {"ok": False, "message": f"Error de comunicación con el motor C++: {exc}"}
         if not response_line:
-            return {"ok": False, "message": "Sin respuesta del motor C++"}
+            rc = self.proc.poll()
+            err = ""
+            if rc is not None and self.proc.stderr:
+                try:
+                    err = self.proc.stderr.read().strip()
+                except Exception:
+                    pass
+            msg = "Sin respuesta del motor C++"
+            if rc is not None:
+                msg += f" (salió con código {rc})"
+            if err:
+                msg += f": {err}"
+            return {"ok": False, "message": msg}
         try:
             return json.loads(response_line)
         except json.JSONDecodeError as exc:
@@ -62,11 +88,17 @@ class GenomicEngineClient:
     def close(self):
         if self.proc and self.proc.poll() is None:
             try:
-                self.proc.stdin.write("QUIT\n")
-                self.proc.stdin.flush()
+                if self.proc.stdin:
+                    self.proc.stdin.write("QUIT\n")
+                    self.proc.stdin.flush()
+                self.proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
                 self.proc.terminate()
             except Exception:
-                pass
+                try:
+                    self.proc.terminate()
+                except Exception:
+                    pass
 
 
 class GenomicAnalyzerApp(tk.Tk):
@@ -90,6 +122,8 @@ class GenomicAnalyzerApp(tk.Tk):
         self.sequences_meta = []
         self.current_status = {}
         self.current_graph_data = None
+        self.current_top_kmers = []
+        self.current_k = 3
 
         self._setup_styles()
         self._build_header()
@@ -104,9 +138,16 @@ class GenomicAnalyzerApp(tk.Tk):
 
         bg_dark = "#0f172a"
         bg_card = "#1e293b"
+        bg_input = "#0f172a"
+        border_col = "#475569"
         fg_main = "#f8fafc"
         accent = "#38bdf8"
         accent_active = "#0284c7"
+
+        self.option_add("*TCombobox*Listbox.background", bg_card)
+        self.option_add("*TCombobox*Listbox.foreground", fg_main)
+        self.option_add("*TCombobox*Listbox.selectBackground", accent_active)
+        self.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
 
         style.configure(".", background=bg_dark, foreground=fg_main, font=("Segoe UI", 10))
         style.configure("TFrame", background=bg_dark)
@@ -117,6 +158,95 @@ class GenomicAnalyzerApp(tk.Tk):
         style.configure("Subtitle.TLabel", font=("Segoe UI", 9), foreground="#94a3b8")
         style.configure("MetricVal.TLabel", background=bg_card, foreground="#38bdf8", font=("Segoe UI", 15, "bold"))
         style.configure("MetricLbl.TLabel", background=bg_card, foreground="#cbd5e1", font=("Segoe UI", 9))
+
+        style.configure(
+            "TEntry",
+            fieldbackground=bg_input,
+            foreground=fg_main,
+            insertcolor=fg_main,
+            bordercolor=border_col,
+            lightcolor=border_col,
+            darkcolor=border_col,
+            padding=(6, 4),
+        )
+        style.map(
+            "TEntry",
+            fieldbackground=[("focus", bg_input), ("readonly", bg_card)],
+            bordercolor=[("focus", accent)],
+        )
+
+        style.configure(
+            "TCombobox",
+            fieldbackground=bg_input,
+            background="#334155",
+            foreground=fg_main,
+            arrowcolor=fg_main,
+            bordercolor=border_col,
+            lightcolor=border_col,
+            darkcolor=border_col,
+            selectbackground=accent_active,
+            selectforeground="#ffffff",
+            padding=(6, 4),
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", bg_input), ("focus", bg_input)],
+            foreground=[("readonly", fg_main)],
+            background=[("active", border_col)],
+            bordercolor=[("focus", accent)],
+        )
+
+        style.configure(
+            "TSpinbox",
+            fieldbackground=bg_input,
+            background="#334155",
+            foreground=fg_main,
+            arrowcolor=fg_main,
+            insertcolor=fg_main,
+            bordercolor=border_col,
+            lightcolor=border_col,
+            darkcolor=border_col,
+            padding=(4, 4),
+        )
+        style.map(
+            "TSpinbox",
+            fieldbackground=[("focus", bg_input)],
+            background=[("active", border_col)],
+            bordercolor=[("focus", accent)],
+        )
+
+        style.configure(
+            "TRadiobutton",
+            background=bg_dark,
+            foreground=fg_main,
+            indicatorcolor=bg_card,
+            indicatorrelief="flat",
+        )
+        style.map(
+            "TRadiobutton",
+            background=[("active", bg_dark)],
+            foreground=[("active", accent)],
+            indicatorcolor=[("selected", accent), ("active", "#334155")],
+        )
+
+        style.configure(
+            "Vertical.TScrollbar",
+            background="#334155",
+            troughcolor=bg_dark,
+            bordercolor=bg_card,
+            arrowcolor=fg_main,
+        )
+        style.configure(
+            "Horizontal.TScrollbar",
+            background="#334155",
+            troughcolor=bg_dark,
+            bordercolor=bg_card,
+            arrowcolor=fg_main,
+        )
+        style.map(
+            "TScrollbar",
+            background=[("active", border_col), ("pressed", accent_active)],
+        )
 
         style.configure(
             "TNotebook",
@@ -164,6 +294,20 @@ class GenomicAnalyzerApp(tk.Tk):
             font=("Segoe UI", 9, "bold"),
         )
         style.map("Treeview", background=[("selected", "#0284c7")])
+
+    def _create_tree_container(self, parent, pack_fill="both", pack_expand=True, pack_pady=(0, 0)):
+        container = ttk.Frame(parent)
+        container.pack(fill=pack_fill, expand=pack_expand, pady=pack_pady)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(0, weight=1)
+        return container
+
+    def _attach_tree_scrollbar(self, container, tree):
+        vscroll = ttk.Scrollbar(container, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=vscroll.set)
+        tree.grid(row=0, column=0, sticky="nsew")
+        vscroll.grid(row=0, column=1, sticky="ns")
+        return vscroll
 
     def _build_header(self):
         header = ttk.Frame(self, padding=(16, 12))
@@ -268,7 +412,8 @@ class GenomicAnalyzerApp(tk.Tk):
         self.lbl_search_result.pack(anchor="w", pady=(0, 6))
 
         cols = ("idx", "id", "length", "preview")
-        self.tree_sequences = ttk.Treeview(left_frame, columns=cols, show="headings", height=12)
+        seq_container = self._create_tree_container(left_frame)
+        self.tree_sequences = ttk.Treeview(seq_container, columns=cols, show="headings", height=12)
         self.tree_sequences.heading("idx", text="#")
         self.tree_sequences.heading("id", text="ID Secuencia (Key)")
         self.tree_sequences.heading("length", text="Longitud (pb)")
@@ -277,7 +422,7 @@ class GenomicAnalyzerApp(tk.Tk):
         self.tree_sequences.column("id", width=210, anchor="w")
         self.tree_sequences.column("length", width=95, anchor="center")
         self.tree_sequences.column("preview", width=260, anchor="w")
-        self.tree_sequences.pack(fill="both", expand=True)
+        self._attach_tree_scrollbar(seq_container, self.tree_sequences)
         self.tree_sequences.bind("<<TreeviewSelect>>", self._on_select_sequence_tree)
 
         # Panel derecho: Historial de Rehashing + Detalle de secuencia
@@ -291,7 +436,8 @@ class GenomicAnalyzerApp(tk.Tk):
         ).pack(anchor="w", pady=(0, 4))
 
         rcols = ("step", "old_cap", "new_cap", "elems", "new_lf")
-        self.tree_rehashes = ttk.Treeview(right_frame, columns=rcols, show="headings", height=5)
+        rh_container = self._create_tree_container(right_frame, pack_fill="x", pack_expand=False, pack_pady=(0, 10))
+        self.tree_rehashes = ttk.Treeview(rh_container, columns=rcols, show="headings", height=5)
         self.tree_rehashes.heading("step", text="Rehash")
         self.tree_rehashes.heading("old_cap", text="Tam. Anterior")
         self.tree_rehashes.heading("new_cap", text="Nuevo Primo m")
@@ -299,7 +445,7 @@ class GenomicAnalyzerApp(tk.Tk):
         self.tree_rehashes.heading("new_lf", text="Nuevo Load Factor")
         for col_id, w in zip(rcols, (65, 95, 105, 85, 120)):
             self.tree_rehashes.column(col_id, width=w, anchor="center")
-        self.tree_rehashes.pack(fill="x", pady=(0, 10))
+        self._attach_tree_scrollbar(rh_container, self.tree_rehashes)
 
         ttk.Label(
             right_frame,
@@ -307,8 +453,9 @@ class GenomicAnalyzerApp(tk.Tk):
             font=("Segoe UI", 10, "bold"),
         ).pack(anchor="w", pady=(0, 4))
 
+        seq_txt_container = self._create_tree_container(right_frame)
         self.txt_sequence_view = tk.Text(
-            right_frame,
+            seq_txt_container,
             height=12,
             bg="#1e293b",
             fg="#e2e8f0",
@@ -318,7 +465,10 @@ class GenomicAnalyzerApp(tk.Tk):
             padx=8,
             pady=8,
         )
-        self.txt_sequence_view.pack(fill="both", expand=True)
+        seq_txt_scroll = ttk.Scrollbar(seq_txt_container, orient="vertical", command=self.txt_sequence_view.yview)
+        self.txt_sequence_view.configure(yscrollcommand=seq_txt_scroll.set)
+        self.txt_sequence_view.grid(row=0, column=0, sticky="nsew")
+        seq_txt_scroll.grid(row=0, column=1, sticky="ns")
 
         btn_row = ttk.Frame(right_frame)
         btn_row.pack(fill="x", pady=(8, 0))
@@ -343,18 +493,18 @@ class GenomicAnalyzerApp(tk.Tk):
         controls.pack(fill="x", pady=(0, 10))
 
         ttk.Label(controls, text="Secuencia (ID):", style="Card.TLabel").pack(side="left", padx=(4, 6))
-        self.combo_kmer_seq = ttk.Combobox(controls, width=28, font=("Consolas", 10))
-        self.combo_kmer_seq.pack(side="left", padx=(0, 14))
+        self.combo_kmer_seq = ttk.Combobox(controls, width=24, font=("Consolas", 10))
+        self.combo_kmer_seq.pack(side="left", padx=(0, 10))
 
         ttk.Label(controls, text="Tamaño k-mer (n):", style="Card.TLabel").pack(side="left", padx=(0, 6))
-        self.spin_k = ttk.Spinbox(controls, from_=1, to=8, width=5, font=("Consolas", 10))
+        self.spin_k = ttk.Spinbox(controls, from_=1, to=10, width=4, font=("Consolas", 10))
         self.spin_k.set("3")
-        self.spin_k.pack(side="left", padx=(0, 14))
+        self.spin_k.pack(side="left", padx=(0, 10))
 
         ttk.Label(controls, text="Top-N (Max-Heap):", style="Card.TLabel").pack(side="left", padx=(0, 6))
-        self.spin_topn = ttk.Spinbox(controls, from_=1, to=100, width=6, font=("Consolas", 10))
+        self.spin_topn = ttk.Spinbox(controls, from_=1, to=100, width=5, font=("Consolas", 10))
         self.spin_topn.set("15")
-        self.spin_topn.pack(side="left", padx=(0, 14))
+        self.spin_topn.pack(side="left", padx=(0, 10))
 
         ttk.Button(
             controls,
@@ -363,8 +513,15 @@ class GenomicAnalyzerApp(tk.Tk):
             command=self._run_kmer_and_heap,
         ).pack(side="left", padx=(0, 8))
 
+        ttk.Button(
+            controls,
+            text="★ Ejemplo PDF (ATGGGATGTCTTG)",
+            style="Accent.TButton",
+            command=self._run_pdf_example_kmers,
+        ).pack(side="left")
+
         metrics_row = ttk.Frame(self.tab_ht2_heap)
-        metrics_row.pack(fill="x", pady=(0, 10))
+        metrics_row.pack(fill="x", pady=(0, 6))
 
         c1, self.lbl_ht2_cap = self._create_metric_card(metrics_row, "Bins Disponibles (4^n)")
         c2, self.lbl_ht2_unique = self._create_metric_card(metrics_row, "k-mers Únicos Insertados")
@@ -374,6 +531,14 @@ class GenomicAnalyzerApp(tk.Tk):
 
         for card in (c1, c2, c3, c4, c5):
             card.pack(side="left", fill="x", expand=True, padx=4)
+
+        self.lbl_ht2_contrast = ttk.Label(
+            self.tab_ht2_heap,
+            text="Contrastación DH vs Linear Probing y Max-Heap disponible tras ejecutar análisis.",
+            foreground="#94a3b8",
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.lbl_ht2_contrast.pack(anchor="w", padx=4, pady=(0, 8))
 
         paned = ttk.PanedWindow(self.tab_ht2_heap, orient="horizontal")
         paned.pack(fill="both", expand=True)
@@ -405,7 +570,8 @@ class GenomicAnalyzerApp(tk.Tk):
         ).pack(anchor="w", pady=(0, 4))
 
         hcols = ("rank", "kmer", "count", "pct")
-        self.tree_heap = ttk.Treeview(left_pane, columns=hcols, show="headings", height=14)
+        heap_container = self._create_tree_container(left_pane)
+        self.tree_heap = ttk.Treeview(heap_container, columns=hcols, show="headings", height=14)
         self.tree_heap.heading("rank", text="Rank (Max-Heap)")
         self.tree_heap.heading("kmer", text="Key (k-mer)")
         self.tree_heap.heading("count", text="Valor (Frecuencia)")
@@ -414,7 +580,7 @@ class GenomicAnalyzerApp(tk.Tk):
         self.tree_heap.column("kmer", width=120, anchor="center")
         self.tree_heap.column("count", width=130, anchor="center")
         self.tree_heap.column("pct", width=110, anchor="center")
-        self.tree_heap.pack(fill="both", expand=True)
+        self._attach_tree_scrollbar(heap_container, self.tree_heap)
 
         # Derecha: Gráfico de Barras del Max-Heap + Casillas de la Tabla Hash 2
         right_pane = ttk.Frame(paned, padding=(8, 0, 0, 0))
@@ -428,6 +594,7 @@ class GenomicAnalyzerApp(tk.Tk):
 
         self.canvas_heap = tk.Canvas(right_pane, bg="#1e293b", height=240, highlightthickness=0)
         self.canvas_heap.pack(fill="x", pady=(0, 10))
+        self.canvas_heap.bind("<Configure>", lambda _e: self._draw_heap_chart(self.current_top_kmers))
 
         ttk.Label(
             right_pane,
@@ -436,7 +603,8 @@ class GenomicAnalyzerApp(tk.Tk):
         ).pack(anchor="w", pady=(0, 4))
 
         scols = ("slot", "state", "kmer", "count", "probes")
-        self.tree_ht2_slots = ttk.Treeview(right_pane, columns=scols, show="headings", height=8)
+        ht2_container = self._create_tree_container(right_pane)
+        self.tree_ht2_slots = ttk.Treeview(ht2_container, columns=scols, show="headings", height=8)
         self.tree_ht2_slots.heading("slot", text="Bin #")
         self.tree_ht2_slots.heading("state", text="Estado")
         self.tree_ht2_slots.heading("kmer", text="Key (k-mer)")
@@ -444,7 +612,7 @@ class GenomicAnalyzerApp(tk.Tk):
         self.tree_ht2_slots.heading("probes", text="Sondeos (Double Hash)")
         for cid, w in zip(scols, (70, 90, 100, 80, 140)):
             self.tree_ht2_slots.column(cid, width=w, anchor="center")
-        self.tree_ht2_slots.pack(fill="both", expand=True)
+        self._attach_tree_scrollbar(ht2_container, self.tree_ht2_slots)
 
     # =========================================================================
     # PESTAÑA 3: GRAFO DE SECUENCIAS DE ADN (KHAN ET AL., 2024)
@@ -527,12 +695,13 @@ class GenomicAnalyzerApp(tk.Tk):
         ).pack(anchor="w", pady=(0, 4))
 
         pcols = ("pos", "pair")
-        self.tree_pairs = ttk.Treeview(left_frame, columns=pcols, show="headings", height=16)
+        pairs_container = self._create_tree_container(left_frame)
+        self.tree_pairs = ttk.Treeview(pairs_container, columns=pcols, show="headings", height=16)
         self.tree_pairs.heading("pos", text="Posición de cada par")
         self.tree_pairs.heading("pair", text="2-mer")
         self.tree_pairs.column("pos", width=130, anchor="center")
         self.tree_pairs.column("pair", width=90, anchor="center")
-        self.tree_pairs.pack(fill="both", expand=True)
+        self._attach_tree_scrollbar(pairs_container, self.tree_pairs)
 
         # Centro: Matriz de Adyacencia Ponderada
         mid_frame = ttk.Frame(paned, padding=(4, 0, 4, 0))
@@ -544,8 +713,9 @@ class GenomicAnalyzerApp(tk.Tk):
             font=("Segoe UI", 10, "bold"),
         ).pack(anchor="w", pady=(0, 4))
 
+        matrix_container = self._create_tree_container(mid_frame)
         self.txt_matrix = tk.Text(
-            mid_frame,
+            matrix_container,
             bg="#1e293b",
             fg="#f8fafc",
             font=("Consolas", 10),
@@ -554,11 +724,12 @@ class GenomicAnalyzerApp(tk.Tk):
             padx=10,
             pady=10,
         )
-        scroll_x = ttk.Scrollbar(mid_frame, orient="horizontal", command=self.txt_matrix.xview)
-        scroll_y = ttk.Scrollbar(mid_frame, orient="vertical", command=self.txt_matrix.yview)
+        scroll_x = ttk.Scrollbar(matrix_container, orient="horizontal", command=self.txt_matrix.xview)
+        scroll_y = ttk.Scrollbar(matrix_container, orient="vertical", command=self.txt_matrix.yview)
         self.txt_matrix.configure(xscrollcommand=scroll_x.set, yscrollcommand=scroll_y.set)
-        self.txt_matrix.pack(fill="both", expand=True)
-        scroll_x.pack(fill="x")
+        self.txt_matrix.grid(row=0, column=0, sticky="nsew")
+        scroll_y.grid(row=0, column=1, sticky="ns")
+        scroll_x.grid(row=1, column=0, sticky="ew")
 
         # Derecha: Dibujo del Grafo Dirigido en Canvas
         right_frame = ttk.Frame(paned, padding=(8, 0, 0, 0))
@@ -582,7 +753,10 @@ class GenomicAnalyzerApp(tk.Tk):
         if not status.get("ok"):
             messagebox.showwarning("Aviso", status.get("message", "Error consultando estado"))
             return
+        self._apply_status_data(status)
+        self._run_pdf_example_graph()
 
+    def _apply_status_data(self, status: dict):
         self.current_status = status
         self.sequences_meta = status.get("sequences", [])
 
@@ -629,8 +803,14 @@ class GenomicAnalyzerApp(tk.Tk):
             self.entry_search_id.insert(0, seq_ids[0])
             self._on_search_ht1()
             self._run_kmer_and_heap()
-
-        self._run_pdf_example_graph()
+        else:
+            self.combo_kmer_seq["values"] = []
+            self.combo_graph_seq["values"] = []
+            self.txt_sequence_view.delete("1.0", "end")
+            self.lbl_search_result.config(
+                text="No hay secuencias cargadas en Tabla Hash 1.",
+                foreground="#94a3b8",
+            )
 
     def _on_load_fasta_dialog(self):
         filepath = filedialog.askopenfilename(
@@ -645,7 +825,7 @@ class GenomicAnalyzerApp(tk.Tk):
         if not resp.get("ok"):
             messagebox.showerror("Error", resp.get("message", "No se pudo cargar el archivo FASTA"))
             return
-        self._refresh_initial_data()
+        self._apply_status_data(resp)
 
     def _on_search_ht1(self):
         seq_id = self.entry_search_id.get().strip()
@@ -659,9 +839,13 @@ class GenomicAnalyzerApp(tk.Tk):
             t_cnt = seq_str.count("T")
             c_cnt = seq_str.count("C")
             g_cnt = seq_str.count("G")
+            other_cnt = len(seq_str) - (a_cnt + t_cnt + c_cnt + g_cnt)
+            base_summary = f"A:{a_cnt} T:{t_cnt} C:{c_cnt} G:{g_cnt}"
+            if other_cnt > 0:
+                base_summary += f" | IUPAC/otros:{other_cnt}"
             self.lbl_search_result.config(
                 text=f"✔ Encontrado en Tabla Hash 1: '{seq_id}' | Longitud: {len(seq_str)} pb | "
-                f"Sondeos (Linear Probing): {probes} | A:{a_cnt} T:{t_cnt} C:{c_cnt} G:{g_cnt}",
+                f"Sondeos (Linear Probing): {probes} | {base_summary}",
                 foreground="#4ade80",
             )
             self.txt_sequence_view.delete("1.0", "end")
@@ -672,6 +856,7 @@ class GenomicAnalyzerApp(tk.Tk):
                 text=f"✖ ID '{seq_id}' no encontrado en Tabla Hash 1 tras {probes} sondeo(s).",
                 foreground="#f87171",
             )
+            self.txt_sequence_view.delete("1.0", "end")
 
     def _on_select_sequence_tree(self, _event):
         sel = self.tree_sequences.selection()
@@ -700,36 +885,79 @@ class GenomicAnalyzerApp(tk.Tk):
 
     def _run_kmer_and_heap(self):
         seq_id = self.combo_kmer_seq.get().strip()
+        if not seq_id:
+            messagebox.showwarning("Secuencia requerida", "Seleccione o ingrese el ID de una secuencia.")
+            return
         try:
-            k = int(self.spin_k.get())
+            k = int(self.spin_k.get().strip())
         except ValueError:
-            k = 3
+            messagebox.showwarning("Parámetro k inválido", "El tamaño k-mer debe ser un entero entre 1 y 10.")
+            return
+        if k < 1 or k > 10:
+            messagebox.showwarning("Parámetro k inválido", "El tamaño k-mer debe estar entre 1 y 10.")
+            return
         try:
-            top_n = int(self.spin_topn.get())
+            top_n = int(self.spin_topn.get().strip())
         except ValueError:
-            top_n = 15
+            messagebox.showwarning("Parámetro Top-N inválido", "La cantidad Top-N debe ser un entero >= 1.")
+            return
+        if top_n < 1:
+            messagebox.showwarning("Parámetro Top-N inválido", "La cantidad Top-N debe ser mayor o igual a 1.")
+            return
 
         resp = self.engine.send_command(f"ANALYZE_KMERS {seq_id} {k} {top_n}")
         if not resp.get("ok"):
             messagebox.showerror("Error", resp.get("message", "No se pudo analizar k-mers"))
             return
+        self._apply_kmer_analysis_response(resp)
 
+    def _run_pdf_example_kmers(self):
+        self.spin_k.set("3")
+        self.spin_topn.set("10")
+        resp = self.engine.send_command("ANALYZE_KMERS_RAW ATGGGATGTCTTG 3 10")
+        if not resp.get("ok"):
+            messagebox.showerror("Error", resp.get("message", "No se pudo analizar el ejemplo del PDF"))
+            return
+        self._apply_kmer_analysis_response(resp)
+
+    def _apply_kmer_analysis_response(self, resp: dict):
+        k = int(resp.get("k", 3))
         cap = resp.get("ht2Capacity", 0)
         uniq = resp.get("ht2Unique", 0)
         tot = resp.get("ht2TotalValid", 0)
         lf = resp.get("ht2LoadFactor", 0.0)
         coll = resp.get("ht2Collisions", 0)
+        dh_probes = resp.get("ht2TotalProbes", 0)
+        dh_max = resp.get("ht2MaxProbes", 0)
+        lp_probes = resp.get("lpTotalProbes", 0)
+        lp_coll = resp.get("lpCollisions", 0)
+        lp_max = resp.get("lpMaxProbes", 0)
+        heap_cmp = resp.get("heapComparisons", 0)
 
+        self.current_k = k
         self.lbl_ht2_cap.config(text=f"{cap} (4^{k})")
         self.lbl_ht2_unique.config(text=str(uniq))
         self.lbl_ht2_total.config(text=str(tot))
         self.lbl_ht2_lf.config(text=f"{lf:.4f}")
         self.lbl_ht2_coll.config(text=str(coll))
 
+        dh_avg = (dh_probes / tot) if tot > 0 else 0.0
+        lp_avg = (lp_probes / tot) if tot > 0 else 0.0
+        self.lbl_ht2_contrast.config(
+            text=(
+                f"Contrastación ({resp.get('seqId', '')}, k={k}, ventanas={tot}): "
+                f"Double Hashing = {dh_probes} sondas (prom {dh_avg:.4f}, col {coll}, max {dh_max})  |  "
+                f"Linear Probing = {lp_probes} sondas (prom {lp_avg:.4f}, col {lp_coll}, max {lp_max})  |  "
+                f"Max-Heap comparaciones = {heap_cmp}"
+            ),
+            foreground="#cbd5e1",
+        )
+
         for item in self.tree_heap.get_children():
             self.tree_heap.delete(item)
 
         top_kmers = resp.get("topKmers", [])
+        self.current_top_kmers = top_kmers
         for row in top_kmers:
             pct = (row["count"] / tot * 100.0) if tot > 0 else 0.0
             self.tree_heap.insert(
@@ -759,13 +987,30 @@ class GenomicAnalyzerApp(tk.Tk):
             self.entry_search_kmer.delete(0, "end")
             self.entry_search_kmer.insert(0, top_kmers[0]["kmer"])
             self._on_search_single_kmer()
+        else:
+            self.lbl_kmer_search_res.config(text="")
 
     def _on_search_single_kmer(self):
         kmer = self.entry_search_kmer.get().strip().upper()
         if not kmer:
+            messagebox.showwarning("k-mer requerido", "Ingrese un k-mer válido compuesto por A, T, C y G.")
             return
+        if len(kmer) != self.current_k:
+            messagebox.showwarning(
+                "Longitud inválida",
+                f"El k-mer '{kmer}' tiene longitud {len(kmer)}, pero la Tabla Hash 2 usa k={self.current_k}.",
+            )
+            return
+        if any(c not in "ATCG" for c in kmer):
+            messagebox.showwarning(
+                "Caracteres inválidos",
+                f"El k-mer '{kmer}' debe contener únicamente bases A, T, C y G.",
+            )
+            return
+
         resp = self.engine.send_command(f"SEARCH_KMER {kmer}")
         if not resp.get("ok"):
+            messagebox.showerror("Error", resp.get("message", "No se pudo consultar el k-mer"))
             return
         if resp.get("found"):
             self.lbl_kmer_search_res.config(
@@ -774,7 +1019,10 @@ class GenomicAnalyzerApp(tk.Tk):
             )
         else:
             self.lbl_kmer_search_res.config(
-                text=f"✖ '{kmer}' no aparece (0 ocurrencias, {resp.get('comparisons', 0)} sondeos; k actual={resp.get('kLength')})",
+                text=(
+                    f"✖ '{kmer}' no aparece (0 ocurrencias — posible nulómero, "
+                    f"{resp.get('comparisons', 0)} sondeos; k actual={resp.get('kLength')})"
+                ),
                 foreground="#f87171",
             )
 
@@ -787,11 +1035,12 @@ class GenomicAnalyzerApp(tk.Tk):
         w = max(self.canvas_heap.winfo_width(), 480)
         h = max(self.canvas_heap.winfo_height(), 220)
 
-        shown = top_kmers[:12]
+        max_bars = 10 if self.current_k >= 6 else 12
+        shown = top_kmers[:max_bars]
         max_count = max(item["count"] for item in shown) if shown else 1
-        pad_left, pad_right, pad_top, pad_bottom = 45, 20, 25, 42
+        pad_left, pad_right, pad_top, pad_bottom = 45, 20, 25, (48 if self.current_k >= 6 else 40)
         plot_w = w - pad_left - pad_right
-        plot_h = h - pad_top - pad_bottom
+        plot_h = max(h - pad_top - pad_bottom, 40)
         bar_gap = 8
         bar_w = max(18, (plot_w - bar_gap * len(shown)) / max(len(shown), 1))
 
@@ -812,40 +1061,70 @@ class GenomicAnalyzerApp(tk.Tk):
                 fill="#f8fafc",
                 font=("Consolas", 9, "bold"),
             )
+            if self.current_k >= 6:
+                lbl_y = y1 + (13 if i % 2 == 0 else 29)
+                lbl_font = ("Consolas", 8)
+            else:
+                lbl_y = y1 + 16
+                lbl_font = ("Consolas", 9)
             self.canvas_heap.create_text(
                 (x0 + x1) / 2,
-                y1 + 16,
+                lbl_y,
                 text=item["kmer"],
                 fill="#cbd5e1",
-                font=("Consolas", 9),
+                font=lbl_font,
             )
 
-    def _get_beta_value(self) -> float:
+    def _get_beta_value(self):
+        raw = self.entry_beta.get().strip()
         try:
-            val = float(self.entry_beta.get().strip())
-            return val if val > 0 else 1.0
+            val = float(raw)
         except ValueError:
-            return 1.0
+            messagebox.showwarning(
+                "Parámetro β inválido",
+                f"El parámetro β ('{raw}') debe ser un número real positivo (> 0).",
+            )
+            return None
+        if not math.isfinite(val) or val <= 0.0:
+            messagebox.showwarning(
+                "Parámetro β inválido",
+                f"El parámetro β ({val}) debe ser finito y estrictamente mayor que 0.",
+            )
+            return None
+        return val
 
     def _run_graph_from_fasta(self):
         seq_id = self.combo_graph_seq.get().strip()
         if not seq_id:
+            messagebox.showwarning("Secuencia requerida", "Seleccione una secuencia FASTA válida.")
             return
         beta = self._get_beta_value()
+        if beta is None:
+            return
         resp = self.engine.send_command(f"BUILD_GRAPH_ID {seq_id} {beta}")
-        if resp.get("ok"):
-            self.current_graph_data = resp
-            self._populate_graph_views()
+        if not resp.get("ok"):
+            messagebox.showerror("Error al construir grafo", resp.get("message", "No se pudo construir el grafo"))
+            return
+        self.current_graph_data = resp
+        self._populate_graph_views()
 
     def _run_graph_from_custom(self):
-        raw = self.entry_custom_dna.get().strip().upper()
-        if not raw:
+        raw = "".join(self.entry_custom_dna.get().split()).upper()
+        if len(raw) < 2:
+            messagebox.showwarning(
+                "Cadena insuficiente",
+                "Ingrese al menos 2 nucleótidos válidos (A, T, C, G) para formar dinucleótidos.",
+            )
             return
         beta = self._get_beta_value()
+        if beta is None:
+            return
         resp = self.engine.send_command(f"BUILD_GRAPH_RAW {raw} {beta}")
-        if resp.get("ok"):
-            self.current_graph_data = resp
-            self._populate_graph_views()
+        if not resp.get("ok"):
+            messagebox.showerror("Error al construir grafo", resp.get("message", "No se pudo construir el grafo"))
+            return
+        self.current_graph_data = resp
+        self._populate_graph_views()
 
     def _run_pdf_example_graph(self):
         self.entry_custom_dna.delete(0, "end")
@@ -892,16 +1171,19 @@ class GenomicAnalyzerApp(tk.Tk):
             title = f"Matriz de Adyacencia Canónica Ω (16×16, β={data['beta']}):\n\n"
 
         lines = [title]
-        header = "      " + "".join(f"{lbl:>9}" for lbl in labels)
-        lines.append(header)
-        lines.append("      " + "-" * (9 * len(labels)))
+        if labels and matrix:
+            header = "      " + "".join(f" {lbl:>9}" for lbl in labels)
+            lines.append(header)
+            lines.append("      " + "-" * (10 * len(labels)))
 
-        for i, row_lbl in enumerate(labels):
-            row_vals = "".join(
-                f"{matrix[i][j]:>9.4f}" if matrix[i][j] > 0 else f"{'0':>9}"
-                for j in range(len(labels))
-            )
-            lines.append(f"{row_lbl:>4} |{row_vals}")
+            for i, row_lbl in enumerate(labels):
+                row_vals = "".join(
+                    f" {matrix[i][j]:>9.4f}" if matrix[i][j] > 0 else f" {'0':>9}"
+                    for j in range(len(labels))
+                )
+                lines.append(f"{row_lbl:>4} |{row_vals}")
+        else:
+            lines.append("(Sin matriz disponible)")
 
         self.txt_matrix.delete("1.0", "end")
         self.txt_matrix.insert("1.0", "\n".join(lines))
@@ -915,6 +1197,7 @@ class GenomicAnalyzerApp(tk.Tk):
         labels = data.get("activeLabels", [])
         matrix = data.get("activeMatrix", [])
         pairs_list = data.get("pairs", [])
+        total_pairs = data.get("pairCount", len(pairs_list))
         beta = data.get("beta", 1.0)
         n = len(labels)
         if n == 0:
@@ -923,8 +1206,8 @@ class GenomicAnalyzerApp(tk.Tk):
         self.canvas_graph.update_idletasks()
         w = max(self.canvas_graph.winfo_width(), 340)
         h = max(self.canvas_graph.winfo_height(), 340)
-        cx, cy = w / 2, h / 2
-        radius = min(w, h) * 0.35
+        cx, cy = w / 2, h / 2 - 6
+        radius = min(w, h) * 0.33
         node_r = 17
 
         label_to_idx = {lbl: i for i, lbl in enumerate(labels)}
@@ -1035,8 +1318,13 @@ class GenomicAnalyzerApp(tk.Tk):
                 x1, y1 = positions[u]
                 x2, y2 = positions[v]
                 if u == v:
+                    dx, dy = x1 - cx, y1 - cy
+                    d = math.hypot(dx, dy) or 1.0
+                    ux, uy = dx / d, dy / d
+                    lx = x1 + ux * (node_r + 12)
+                    ly = y1 + uy * (node_r + 12)
                     self.canvas_graph.create_oval(
-                        x1 - 14, y1 - 32, x1 + 14, y1 - 6, outline="#38bdf8", width=1.5
+                        lx - 12, ly - 12, lx + 12, ly + 12, outline="#38bdf8", width=1.5
                     )
                     continue
                 dx, dy = x2 - x1, y2 - y1
@@ -1076,6 +1364,19 @@ class GenomicAnalyzerApp(tk.Tk):
                 fill="#ffffff",
                 font=("Consolas", 10, "bold"),
             )
+
+        if 0 < total_pairs <= 20 and len(pairs_list) <= 20:
+            mode_txt = f"Modo: Loop Digraph exacto ({total_pairs} pares)"
+        else:
+            mode_txt = f"Modo: Subgrafo Top-35 aristas ({total_pairs} pares totales)"
+        self.canvas_graph.create_text(
+            10,
+            h - 12,
+            anchor="w",
+            text=mode_txt,
+            fill="#94a3b8",
+            font=("Segoe UI", 8),
+        )
 
     def _on_close(self):
         if hasattr(self, "engine") and self.engine:
